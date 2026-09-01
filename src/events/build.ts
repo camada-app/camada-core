@@ -31,7 +31,7 @@ export interface BuildOptions {
   ja4?: string | null;                // x-vercel-ja4-digest on Vercel
 }
 
-/** The mutable wire event; the caller fills st/lat on response-finish before enqueueing. */
+/** The mutable wire event; the caller fills st/dur on response-finish before enqueueing. */
 export interface WireEvent { [k: string]: unknown }
 
 export function buildWireEvent(r: RequestInfo, o: BuildOptions): WireEvent {
@@ -62,6 +62,6 @@ export function buildWireEvent(r: RequestInfo, o: BuildOptions): WireEvent {
     hm: mask >>> 0, hn, hb, ck: cookie ? cookie.split(';').length : 0,
     hord: names.join(',').slice(0, 2048),   // true wire header order — the signal only this position has
     ...(o.ja4 ? { ja4: o.ja4 } : {}),
-    st: null, lat: null,                    // filled on response-finish
+    st: null, dur: null,                    // filled on response-finish ('dur': the collector wire already claims 'lat' for latitude)
   };
 }
