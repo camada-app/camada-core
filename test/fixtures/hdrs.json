@@ -1,0 +1,59 @@
+{
+  "hdrs": [
+    "accept",
+    "accept-language",
+    "accept-encoding",
+    "sec-fetch-site",
+    "sec-fetch-mode",
+    "sec-fetch-dest",
+    "sec-fetch-user",
+    "sec-ch-ua",
+    "sec-ch-ua-mobile",
+    "sec-ch-ua-platform",
+    "upgrade-insecure-requests",
+    "dnt",
+    "cache-control",
+    "pragma",
+    "referer",
+    "origin",
+    "cookie",
+    "authorization",
+    "x-requested-with",
+    "content-type",
+    "via",
+    "x-forwarded-for",
+    "priority",
+    "sec-purpose",
+    "save-data",
+    "te",
+    "if-modified-since",
+    "if-none-match"
+  ],
+  "cases": [
+    {
+      "names": [
+        "accept",
+        "accept-language",
+        "accept-encoding"
+      ],
+      "hm": 7
+    },
+    {
+      "names": [
+        "accept",
+        "cookie",
+        "authorization"
+      ],
+      "hm": 196609
+    },
+    {
+      "names": [
+        "sec-ch-ua",
+        "sec-ch-ua-mobile",
+        "sec-ch-ua-platform",
+        "if-none-match"
+      ],
+      "hm": 134218624
+    }
+  ]
+}
