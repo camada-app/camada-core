@@ -43,7 +43,7 @@ export class EventQueue {
   /** Drains the queue, ≤1000 events per POST (the server slices there); single-in-flight;
    *  the returned promise never rejects. Full drain matters for the exit flush. */
   flush(waitUntil?: (p: Promise<unknown>) => void): Promise<void> {
-    if (this.inflight) return this.inflight;
+    if (this.inflight) { waitUntil?.(this.inflight); return this.inflight; }   // edge runtimes must still hold the isolate open
     if (this.q.length === 0) return Promise.resolve();
     this.inflight = (async () => {
       while (this.q.length > 0) {
@@ -64,23 +64,35 @@ export class EventQueue {
 
   stop(): void {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    for (const [ev, fn] of this.exitHandlers.splice(0)) {
+      ((globalThis as { process?: NodeJS.Process }).process)?.removeListener(ev, fn);
+    }
+    this.exitInstalled = false;
   }
 
-  /** Node-only, opt-in (called by @camada/node): drain on beforeExit and on SIGTERM/SIGINT,
-   *  then re-raise the signal with the default disposition so the app's exit code is untouched. */
+  private exitHandlers: Array<[string, (...a: unknown[]) => void]> = [];
+
+  /** Node-only, opt-in (called by @camada/node): drain on beforeExit and on SIGTERM/SIGINT.
+   *  The signal is re-raised with the default disposition ONLY when camada's handler was the
+   *  sole listener — an app with its own graceful shutdown keeps full ownership of exit and
+   *  never sees the signal delivered twice. stop() removes everything installed here. */
   installNodeExitFlush(): void {
     if (this.exitInstalled) return;
     const proc = (globalThis as { process?: NodeJS.Process }).process;
     if (!proc?.on) return;
     this.exitInstalled = true;
-    proc.on('beforeExit', () => { void this.flush(); });
+    const onBeforeExit = () => { void this.flush(); };
+    proc.on('beforeExit', onBeforeExit);
+    this.exitHandlers.push(['beforeExit', onBeforeExit]);
     for (const sig of ['SIGTERM', 'SIGINT'] as const) {
       const handler = () => {
         proc.removeListener(sig, handler);
+        if (proc.listenerCount(sig) > 0) { void this.flush(); return; }   // the app owns shutdown; just drain quietly
         const done = () => proc.kill(proc.pid, sig);
         Promise.race([this.flush(), new Promise((r) => setTimeout(r, 500))]).then(done, done);
       };
       proc.on(sig, handler);
+      this.exitHandlers.push([sig, handler]);
     }
   }
 }

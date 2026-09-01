@@ -51,9 +51,11 @@ export class SnapshotClient {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
   }
 
-  /** Kicks a refresh when stale; never awaited on the request path, never throws. */
+  /** Kicks a refresh when stale; never awaited on the request path, never throws.
+   *  Staleness uses 0.9×refreshMs so a timer tick arriving at ~refreshMs-ε still refreshes —
+   *  a full-interval comparison makes every other tick a no-op (effective cadence 2×). */
   ensureFresh(waitUntil?: (p: Promise<unknown>) => void): void {
-    if (this.loading || Date.now() - this.loadedAt <= this.opts.refreshMs) return;
+    if (this.loading || Date.now() - this.loadedAt <= this.opts.refreshMs * 0.9) return;
     this.loading = this.load().catch(() => {}).finally(() => { this.loading = null; });
     waitUntil?.(this.loading);
   }

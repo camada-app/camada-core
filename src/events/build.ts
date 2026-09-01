@@ -34,6 +34,17 @@ export interface BuildOptions {
 /** The mutable wire event; the caller fills st/dur on response-finish before enqueueing. */
 export interface WireEvent { [k: string]: unknown }
 
+// A schemeless header (`Authorization: <raw token>`) has no safe prefix: the first "word" IS
+// the credential. Only a real auth-scheme token followed by a space ever ships.
+const SCHEME_RE = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,16}$/;
+export function authScheme(value: string | null): string | null {
+  if (!value) return null;
+  const sp = value.indexOf(' ');
+  if (sp <= 0) return null;
+  const scheme = value.slice(0, sp);
+  return SCHEME_RE.test(scheme) ? scheme : null;
+}
+
 export function buildWireEvent(r: RequestInfo, o: BuildOptions): WireEvent {
   let mask = 0, hn = 0, hb = 0, cookie = '', names: string[] = [];
   const first: Record<string, string> = {};
@@ -48,7 +59,7 @@ export function buildWireEvent(r: RequestInfo, o: BuildOptions): WireEvent {
   const h = (k: string): string | null => first[k] ?? null;
   const query = r.query || '';
   const qn = query.length > 1 ? query.slice(1).split('&').filter(Boolean).length : 0;
-  const auth = h('authorization');
+  const auth = authScheme(h('authorization'));
   return {
     tap: o.tap, rid: o.rid, sid: o.sid ?? null, ns: o.newSession ? 1 : 0, ts: Date.now(),
     ip: r.ip,
@@ -58,7 +69,7 @@ export function buildWireEvent(r: RequestInfo, o: BuildOptions): WireEvent {
     ua: h('user-agent'), chua: h('sec-ch-ua'), chmob: h('sec-ch-ua-mobile'), chplat: h('sec-ch-ua-platform'),
     acc: h('accept'), lang: h('accept-language'), fs: h('sec-fetch-site'), fm: h('sec-fetch-mode'),
     fd: h('sec-fetch-dest'), fu: h('sec-fetch-user'), ref: h('referer'), org: h('origin'),
-    xrw: h('x-requested-with'), auth: auth ? auth.split(' ')[0] : null,   // scheme only, never the credential
+    xrw: h('x-requested-with'), auth,   // scheme only, never the credential (see authScheme)
     hm: mask >>> 0, hn, hb, ck: cookie ? cookie.split(';').length : 0,
     hord: names.join(',').slice(0, 2048),   // true wire header order — the signal only this position has
     ...(o.ja4 ? { ja4: o.ja4 } : {}),
