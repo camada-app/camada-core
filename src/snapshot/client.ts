@@ -67,12 +67,15 @@ export class SnapshotClient {
     this.readConfig(res);
     if (res.status === 304) return;
     if (res.status === 204) { this.matcher = null; this.etag = null; return; }   // no snapshot published: enforce nothing
-    const metaHdr = res.headers.get('x-camada-meta');
-    const bin = await res.arrayBuffer();
-    if (!metaHdr) { this.matcher = null; return; }
-    const meta = JSON.parse(metaHdr) as SnapshotMeta;
+    // 200 body frame: [u32 LE meta-length][meta JSON utf8][BLK3 container] — meta rides the
+    // body (block lists grow without bound; headers must stay small)
+    const frame = new Uint8Array(await res.arrayBuffer());
+    if (frame.byteLength < 4) throw new Error('camada: truncated snapshot frame');
+    const metaLen = new DataView(frame.buffer, frame.byteOffset).getUint32(0, true);
+    if (4 + metaLen > frame.byteLength) throw new Error('camada: truncated snapshot frame');
+    const meta = JSON.parse(new TextDecoder().decode(frame.subarray(4, 4 + metaLen))) as SnapshotMeta;
     if (this.matcher && meta.version === this.matcher.snap.version) return;
-    this.matcher = new Matcher(parseSnapshot(bin, meta));   // parse throws on corrupt data -> caught above, previous kept
+    this.matcher = new Matcher(parseSnapshot(frame.subarray(4 + metaLen), meta));   // throws on corrupt data -> caught above, previous kept
     this.etag = res.headers.get('etag');
   }
 

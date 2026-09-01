@@ -7,9 +7,18 @@ const bin = readFileSync(new URL('./fixtures/snap-basic.bin', import.meta.url));
 const meta = JSON.stringify(JSON.parse(readFileSync(new URL('./fixtures/snap-basic.meta.json', import.meta.url), 'utf8')));
 const CONFIG = JSON.stringify({ tenant: 'acme', beacon: true, sample: 1, exclude: [], trusted_proxy: { mode: 'none' }, poll_seconds: 30 });
 
-const ok200 = () => new Response(new Uint8Array(bin), {
+// 200 body frame: [u32 LE meta-length][meta JSON][BLK3 bin]
+const frame = (metaJson: string, body: Uint8Array) => {
+  const m = new TextEncoder().encode(metaJson);
+  const f = new Uint8Array(4 + m.length + body.length);
+  new DataView(f.buffer).setUint32(0, m.length, true);
+  f.set(m, 4); f.set(body, 4 + m.length);
+  return f;
+};
+
+const ok200 = () => new Response(frame(meta, new Uint8Array(bin)), {
   status: 200,
-  headers: { etag: `"${JSON.parse(meta).version}"`, 'x-camada-meta': meta, 'x-camada-config': CONFIG },
+  headers: { etag: `"${JSON.parse(meta).version}"`, 'x-camada-config': CONFIG },
 });
 
 const client = (fetchImpl: typeof fetch, mode: 'timer' | 'lazy' = 'lazy') =>
@@ -61,7 +70,7 @@ describe('SnapshotClient', () => {
     let calls = 0;
     const c = client(async () => {
       if (++calls === 1) return ok200();
-      return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200, headers: { 'x-camada-meta': JSON.stringify({ version: 'v2' }), 'x-camada-config': CONFIG } });
+      return new Response(frame(JSON.stringify({ version: 'v2' }), new Uint8Array([1, 2, 3, 4])), { status: 200, headers: { 'x-camada-config': CONFIG } });
     });
     c.ensureFresh(); await settle();
     c.ensureFresh(); await settle();
