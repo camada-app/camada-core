@@ -2,7 +2,7 @@ export { parseSnapshot, type Snapshot, type SnapshotMeta } from './snapshot/pars
 export { Matcher, type MatchInput, type MatchResult, type BlockReason } from './snapshot/match.js';
 export { SnapshotClient, type SnapshotClientOptions, type Verdict } from './snapshot/client.js';
 export { parseIp4, parseIp6Into } from './snapshot/ipparse.js';
-export { HDRS, buildWireEvent, type RequestInfo, type BuildOptions, type WireEvent } from './events/build.js';
+export { HDRS, buildWireEvent, authScheme, type RequestInfo, type BuildOptions, type WireEvent } from './events/build.js';
 export { EventQueue, type EventQueueOptions } from './events/queue.js';
 export { scrubQuery, bodyShape, hashUserId, REDACT_ALLOWLIST } from './redact.js';
 export { resolveClientIp, type TrustedProxyConfig } from './ip.js';

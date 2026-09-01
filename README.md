@@ -26,9 +26,10 @@ from sibling checkouts.
 - **`buildWireEvent`** — the collector-compatible wire shape, including the pinned `HDRS`
   header-bitmask order and the wire header order (`hord`) only an in-app SDK can see.
 - **Redaction (non-configurable-off)** — `Authorization`/`Cookie` values never leave (scheme
-  and count only), credential-looking query values become `~r`, request bodies reduce to field
-  names + sizes, and user identifiers are HMAC-hashed in-process (`hashUserId`). The allowlist
-  can be widened by customers, never narrowed. This package is open source so that claim is
+  and count only; a schemeless `Authorization` value ships nothing at all), credential-looking
+  query values become `~r`, and user identifiers are HMAC-hashed in-process (`hashUserId`).
+  `bodyShape` and `REDACT_ALLOWLIST` are staging for app-context body capture (a later phase);
+  no SDK captures request bodies today. This package is open source so these claims are
   auditable.
 - **`resolveClientIp`** — socket peer by default; `X-Forwarded-For` is only consulted under an
   explicit trusted-proxy config (`hops` / `cidrs` / `vercel`), so a spoofed XFF can't reach the
