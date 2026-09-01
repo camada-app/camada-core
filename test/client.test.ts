@@ -109,6 +109,45 @@ describe('SnapshotClient', () => {
     expect(c.verdict({ ip: '203.0.113.66' }).block).toBe(true);
   });
 
+  it('adopts the server-sent poll_seconds as its cadence (the server can slow every instance down)', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const cfg60 = CONFIG.replace('"poll_seconds":30', '"poll_seconds":60');
+    const ok60 = async () => { calls++; return new Response(frame(meta, new Uint8Array(bin)), { status: 200, headers: { etag: `"${JSON.parse(meta).version}"`, 'x-camada-config': cfg60 } }); };
+    const c = new SnapshotClient({ url: 'https://a.test/snapshot', token: 'st', mode: 'timer', fetchImpl: ok60 });   // no refreshMs: the 30 s default, steerable
+    c.start();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(31_000);   // the default 30 s tick is gone: the server said 60
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(calls).toBe(2);
+    c.stop();
+    // an explicit refreshMs is pinned: the server cannot move it
+    calls = 0;
+    const p = new SnapshotClient({ url: 'https://a.test/snapshot', token: 'st', mode: 'timer', refreshMs: 1000, fetchImpl: ok60 });
+    p.start();
+    await vi.advanceTimersByTimeAsync(3_050);
+    expect(calls).toBe(4);
+    p.stop();
+    vi.useRealTimers();
+  });
+
+  it('treats an explicit undefined refreshMs as unset (adapters forward optional options verbatim)', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    // a bare 200 without x-camada-config: nothing but the constructor default can set the cadence
+    const bare = () => new Response(frame(meta, new Uint8Array(bin)), { status: 200, headers: { etag: `"${JSON.parse(meta).version}"` } });
+    const c = new SnapshotClient({ url: 'https://a.test/snapshot', token: 'st', mode: 'timer', refreshMs: undefined, fetchImpl: async () => { calls++; return bare(); } });
+    c.start();
+    await vi.advanceTimersByTimeAsync(5_000);   // a 0/undefined interval would have polled thousands of times by now
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(26_000);
+    expect(calls).toBe(2);
+    c.stop();
+    vi.useRealTimers();
+  });
+
   it('timer mode starts and stops without keeping the process alive', async () => {
     vi.useFakeTimers();
     let calls = 0;
