@@ -17,7 +17,7 @@ export interface Verdict { block: boolean; reason?: BlockReason | 'cold'; versio
 export interface SnapshotClientOptions {
   url: string;                    // e.g. https://analyst.example.com/snapshot
   token: string;                  // the snapshot token (CAMADA_KEY's second half)
-  refreshMs?: number;             // poll cadence; the server suggests poll_seconds in config
+  refreshMs?: number;             // poll cadence. Leave unset and the server's poll_seconds steers it (its cost lever); set it and it is pinned
   fetchTimeoutMs?: number;
   mode?: 'timer' | 'lazy';        // timer: unref'd interval (long-lived Node); lazy: ensureFresh() per request (serverless/edge)
   fetchImpl?: typeof fetch;
@@ -27,23 +27,33 @@ export class SnapshotClient {
   matcher: Matcher | null = null;
   config: CamadaRemoteConfig | null = null;
   private etag: string | null = null;
+  private refreshMs: number;
+  private readonly pinned: boolean;   // an explicit refreshMs option wins over the server's poll_seconds
   private loadedAt = 0;
   private loading: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly opts: Required<Omit<SnapshotClientOptions, 'fetchImpl'>> & { fetchImpl: typeof fetch };
 
   constructor(opts: SnapshotClientOptions) {
+    const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as SnapshotClientOptions;   // adapters forward optional options verbatim; undefined must not clobber a default
     this.opts = {
       refreshMs: DEFAULT_REFRESH_MS, fetchTimeoutMs: 3_000, mode: 'timer',
       fetchImpl: opts.fetchImpl ?? fetch,
-      ...opts,
+      ...given,
     };
+    this.pinned = given.refreshMs !== undefined;
+    this.refreshMs = this.opts.refreshMs;
   }
 
   start(): void {
     if (this.timer || this.opts.mode !== 'timer') { this.ensureFresh(); return; }
     this.ensureFresh();
-    this.timer = setInterval(() => this.ensureFresh(), this.opts.refreshMs);
+    this.schedule();
+  }
+
+  private schedule(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = setInterval(() => this.ensureFresh(), this.refreshMs);
     (this.timer as { unref?: () => void }).unref?.();   // never keep the process alive (no unref on edge runtimes)
   }
 
@@ -55,7 +65,7 @@ export class SnapshotClient {
    *  Staleness uses 0.9×refreshMs so a timer tick arriving at ~refreshMs-ε still refreshes —
    *  a full-interval comparison makes every other tick a no-op (effective cadence 2×). */
   ensureFresh(waitUntil?: (p: Promise<unknown>) => void): void {
-    if (this.loading || Date.now() - this.loadedAt <= this.opts.refreshMs * 0.9) return;
+    if (this.loading || Date.now() - this.loadedAt <= this.refreshMs * 0.9) return;
     this.loading = this.load().catch(() => {}).finally(() => { this.loading = null; });
     waitUntil?.(this.loading);
   }
@@ -84,7 +94,12 @@ export class SnapshotClient {
   private readConfig(res: { headers: { get(k: string): string | null } }): void {
     const raw = res.headers.get('x-camada-config');
     if (!raw) return;
-    try { this.config = JSON.parse(raw) as CamadaRemoteConfig; } catch { /* keep previous config */ }
+    try { this.config = JSON.parse(raw) as CamadaRemoteConfig; } catch { return; /* keep previous config */ }
+    // the server steers the poll cadence per tenant (its cost lever) unless the client pinned one
+    const ms = Number(this.config.poll_seconds) * 1000;
+    if (this.pinned || !Number.isFinite(ms) || ms < 5_000 || ms === this.refreshMs) return;
+    this.refreshMs = ms;
+    if (this.timer) this.schedule();
   }
 
   /** Cold (never loaded) and no-snapshot both fail open, mirroring the edge collector. */
