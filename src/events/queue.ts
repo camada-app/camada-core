@@ -1,0 +1,86 @@
+// EventQueue: fire-and-forget batched shipping to POST /e. The collector ships one event per
+// request with a 200 ms budget; an in-process SDK can do better — batch, flush on size or
+// interval, and drain on process exit — but the same law holds: NOTHING here may ever throw
+// into the customer's request path, and a dead ingest must cost nothing but dropped telemetry.
+
+export interface EventQueueOptions {
+  url: string;                    // ingest base, e.g. https://analyst.example.com
+  token: string;                  // ingest token (x-tenant header)
+  maxBatch?: number;              // flush when the queue reaches this many (server caps at 1000)
+  maxQueue?: number;              // drop-oldest beyond this
+  flushMs?: number;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}
+
+export class EventQueue {
+  private q: unknown[] = [];
+  private inflight: Promise<void> | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private exitInstalled = false;
+  dropped = 0;                    // debug counter, not an API promise
+  private readonly opts: Required<Omit<EventQueueOptions, 'fetchImpl'>> & { fetchImpl: typeof fetch };
+
+  constructor(opts: EventQueueOptions) {
+    this.opts = { maxBatch: 200, maxQueue: 2000, flushMs: 5_000, timeoutMs: 2_000, fetchImpl: opts.fetchImpl ?? fetch, ...opts };
+  }
+
+  get size(): number { return this.q.length; }
+
+  /** Synchronous, never throws. Starts the interval timer lazily on first push. */
+  push(event: unknown): void {
+    try {
+      if (this.q.length >= this.opts.maxQueue) { this.q.shift(); this.dropped++; }
+      this.q.push(event);
+      if (!this.timer) {
+        this.timer = setInterval(() => this.flush(), this.opts.flushMs);
+        (this.timer as { unref?: () => void }).unref?.();
+      }
+      if (this.q.length >= this.opts.maxBatch) this.flush();
+    } catch { /* never into the request path */ }
+  }
+
+  /** Drains the queue, ≤1000 events per POST (the server slices there); single-in-flight;
+   *  the returned promise never rejects. Full drain matters for the exit flush. */
+  flush(waitUntil?: (p: Promise<unknown>) => void): Promise<void> {
+    if (this.inflight) return this.inflight;
+    if (this.q.length === 0) return Promise.resolve();
+    this.inflight = (async () => {
+      while (this.q.length > 0) {
+        const batch = this.q.splice(0, 1000);
+        try {
+          await this.opts.fetchImpl(`${this.opts.url}/e`, {
+            method: 'POST',
+            headers: { 'x-tenant': this.opts.token, 'content-type': 'application/json' },
+            body: JSON.stringify(batch),
+            signal: AbortSignal.timeout(this.opts.timeoutMs),
+          });
+        } catch { this.dropped += batch.length; }
+      }
+    })().finally(() => { this.inflight = null; });
+    waitUntil?.(this.inflight);
+    return this.inflight;
+  }
+
+  stop(): void {
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+  }
+
+  /** Node-only, opt-in (called by @camada/node): drain on beforeExit and on SIGTERM/SIGINT,
+   *  then re-raise the signal with the default disposition so the app's exit code is untouched. */
+  installNodeExitFlush(): void {
+    if (this.exitInstalled) return;
+    const proc = (globalThis as { process?: NodeJS.Process }).process;
+    if (!proc?.on) return;
+    this.exitInstalled = true;
+    proc.on('beforeExit', () => { void this.flush(); });
+    for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+      const handler = () => {
+        proc.removeListener(sig, handler);
+        const done = () => proc.kill(proc.pid, sig);
+        Promise.race([this.flush(), new Promise((r) => setTimeout(r, 500))]).then(done, done);
+      };
+      proc.on(sig, handler);
+    }
+  }
+}

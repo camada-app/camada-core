@@ -1,0 +1,90 @@
+// SnapshotClient: the single-tenant port of the edge collector's snapshot lifecycle
+// (edge-analyst src/blocklist.js entry/load/refresh) over the GET /snapshot contract:
+//   200  BLK3 body + etag + x-camada-meta + x-camada-config
+//   304  nothing changed; config headers repeated (config refreshes every poll for free)
+//   204  authenticated, no snapshot published -> enforce nothing, fail open
+// Semantics ported exactly: single-in-flight load; loadedAt stamped even on 204 (retry per
+// poll cadence, not per request); any error keeps the previous snapshot; cold = fail open.
+
+import { parseSnapshot, type SnapshotMeta } from './parse.js';
+import { Matcher, type MatchInput, type BlockReason } from './match.js';
+import type { CamadaRemoteConfig } from '../config.js';
+
+/** Like MatchResult, plus 'cold' for "never loaded yet" (fail open, mirrors the collector). */
+export interface Verdict { block: boolean; reason?: BlockReason | 'cold'; version?: string }
+
+export interface SnapshotClientOptions {
+  url: string;                    // e.g. https://analyst.example.com/snapshot
+  token: string;                  // the snapshot token (CAMADA_KEY's second half)
+  refreshMs?: number;             // poll cadence; the server suggests poll_seconds in config
+  fetchTimeoutMs?: number;
+  mode?: 'timer' | 'lazy';        // timer: unref'd interval (long-lived Node); lazy: ensureFresh() per request (serverless/edge)
+  fetchImpl?: typeof fetch;
+}
+
+export class SnapshotClient {
+  matcher: Matcher | null = null;
+  config: CamadaRemoteConfig | null = null;
+  private etag: string | null = null;
+  private loadedAt = 0;
+  private loading: Promise<void> | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private readonly opts: Required<Omit<SnapshotClientOptions, 'fetchImpl'>> & { fetchImpl: typeof fetch };
+
+  constructor(opts: SnapshotClientOptions) {
+    this.opts = {
+      refreshMs: 30_000, fetchTimeoutMs: 3_000, mode: 'timer',
+      fetchImpl: opts.fetchImpl ?? fetch,
+      ...opts,
+    };
+  }
+
+  start(): void {
+    if (this.timer || this.opts.mode !== 'timer') { this.ensureFresh(); return; }
+    this.ensureFresh();
+    this.timer = setInterval(() => this.ensureFresh(), this.opts.refreshMs);
+    (this.timer as { unref?: () => void }).unref?.();   // never keep the process alive (no unref on edge runtimes)
+  }
+
+  stop(): void {
+    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+  }
+
+  /** Kicks a refresh when stale; never awaited on the request path, never throws. */
+  ensureFresh(waitUntil?: (p: Promise<unknown>) => void): void {
+    if (this.loading || Date.now() - this.loadedAt <= this.opts.refreshMs) return;
+    this.loading = this.load().catch(() => {}).finally(() => { this.loading = null; });
+    waitUntil?.(this.loading);
+  }
+
+  private async load(): Promise<void> {
+    const headers: Record<string, string> = { authorization: `Bearer ${this.opts.token}` };
+    if (this.etag) headers['if-none-match'] = this.etag;
+    const res = await this.opts.fetchImpl(this.opts.url, { headers, signal: AbortSignal.timeout(this.opts.fetchTimeoutMs) });
+    if (res.status !== 200 && res.status !== 204 && res.status !== 304) return;   // 401/5xx: keep what we have
+    this.loadedAt = Date.now();
+    this.readConfig(res);
+    if (res.status === 304) return;
+    if (res.status === 204) { this.matcher = null; this.etag = null; return; }   // no snapshot published: enforce nothing
+    const metaHdr = res.headers.get('x-camada-meta');
+    const bin = await res.arrayBuffer();
+    if (!metaHdr) { this.matcher = null; return; }
+    const meta = JSON.parse(metaHdr) as SnapshotMeta;
+    if (this.matcher && meta.version === this.matcher.snap.version) return;
+    this.matcher = new Matcher(parseSnapshot(bin, meta));   // parse throws on corrupt data -> caught above, previous kept
+    this.etag = res.headers.get('etag');
+  }
+
+  private readConfig(res: { headers: { get(k: string): string | null } }): void {
+    const raw = res.headers.get('x-camada-config');
+    if (!raw) return;
+    try { this.config = JSON.parse(raw) as CamadaRemoteConfig; } catch { /* keep previous config */ }
+  }
+
+  /** Cold (never loaded) and no-snapshot both fail open, mirroring the edge collector. */
+  verdict(input: MatchInput): Verdict {
+    if (!this.loadedAt) return { block: false, reason: 'cold' };
+    if (!this.matcher) return { block: false };
+    return this.matcher.match(input);
+  }
+}
