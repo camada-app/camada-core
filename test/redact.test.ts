@@ -36,6 +36,17 @@ describe('hashUserId', () => {
 });
 
 describe('the never-leaks property', () => {
+  it('a schemeless Authorization header ships nothing at all', () => {
+    const rawToken = 'eyJhbGciOiJIUzI1NiJ9.raw.credential-no-scheme';
+    const ev = buildWireEvent({
+      method: 'GET', host: 'x.test', path: '/', query: '',
+      headers: [['Authorization', rawToken], ['authorization', 'Basic dXNlcjpwYXNz'], ['User-Agent', 'ua']],
+      ip: '9.9.9.9',
+    }, { tap: 'sdk-node', rid: 'r1' });
+    expect(JSON.stringify(ev)).not.toContain(rawToken.slice(0, 16));   // no prefix either
+    expect(ev.auth).toBeNull();   // first header wins and it has no scheme
+  });
+
   it('a serialized event built from hostile inputs contains no credential material', () => {
     const secrets = ['eyJhbGciOiJIUzI1NiJ9.super.secretjwt', 'session=deadbeefcafe1234', 'hunter2-password', 'sk_live_abcdef123456'];
     const ev = buildWireEvent({
