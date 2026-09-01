@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveClientIp } from '../src/index.js';
+import { resolveClientIp, parseTrustedProxyEnv } from '../src/index.js';
 
 const SOCK = '172.18.0.5';
 
@@ -39,5 +39,29 @@ describe('resolveClientIp', () => {
     expect(resolveClientIp(SOCK, 'not-an-ip', { mode: 'hops', hops: 1 })).toBe(SOCK);
     expect(resolveClientIp(SOCK, '', { mode: 'hops', hops: 1 })).toBe(SOCK);
     expect(resolveClientIp(null, '1.2.3.4')).toBeNull();
+  });
+});
+
+describe('parseTrustedProxyEnv', () => {
+  it('parses the four documented forms', () => {
+    expect(parseTrustedProxyEnv('none')).toEqual({ mode: 'none' });
+    expect(parseTrustedProxyEnv('vercel')).toEqual({ mode: 'vercel' });
+    expect(parseTrustedProxyEnv('hops:2')).toEqual({ mode: 'hops', hops: 2 });
+    expect(parseTrustedProxyEnv('cidrs:173.245.48.0/20, 2400:cb00::/32')).toEqual({ mode: 'cidrs', cidrs: ['173.245.48.0/20', '2400:cb00::/32'] });
+  });
+
+  it('returns null (defer to server config) on unset input', () => {
+    expect(parseTrustedProxyEnv(undefined)).toBeNull();
+    expect(parseTrustedProxyEnv(null)).toBeNull();
+    expect(parseTrustedProxyEnv('')).toBeNull();
+  });
+
+  it('returns null on malformed input rather than granting trust', () => {
+    expect(parseTrustedProxyEnv('hops:0')).toBeNull();
+    expect(parseTrustedProxyEnv('hops:abc')).toBeNull();
+    expect(parseTrustedProxyEnv('hops:1.5')).toBeNull();
+    expect(parseTrustedProxyEnv('cidrs:')).toBeNull();
+    expect(parseTrustedProxyEnv('cidrs: ,')).toBeNull();
+    expect(parseTrustedProxyEnv('junk')).toBeNull();
   });
 });

@@ -11,6 +11,18 @@ export type TrustedProxyConfig =
   | { mode: 'cidrs'; cidrs: string[] }
   | { mode: 'vercel' };   // Vercel overwrites XFF, so its rightmost entry is trustworthy
 
+/** Parses the CAMADA_TRUSTED_PROXY env string: none | vercel | hops:N | cidrs:a,b.
+ *  Unset or malformed input returns null — callers treat that as "defer to the
+ *  server-delivered tenant config", never as an implicit trust grant. */
+export function parseTrustedProxyEnv(v: string | null | undefined): TrustedProxyConfig | null {
+  if (!v) return null;
+  if (v === 'none') return { mode: 'none' };
+  if (v === 'vercel') return { mode: 'vercel' };
+  if (v.startsWith('hops:')) { const hops = Number(v.slice(5)); return Number.isInteger(hops) && hops >= 1 ? { mode: 'hops', hops } : null; }
+  if (v.startsWith('cidrs:')) { const cidrs = v.slice(6).split(',').map((s) => s.trim()).filter(Boolean); return cidrs.length ? { mode: 'cidrs', cidrs } : null; }
+  return null;
+}
+
 // Reusable scratch for parseIp6Into (whose params these mirror): parsing an address is
 // synchronous and never interleaves, so one shared pair avoids per-check allocation.
 const W = new Uint32Array(4), G = new Uint16Array(8);
