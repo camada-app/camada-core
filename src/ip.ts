@@ -11,6 +11,8 @@ export type TrustedProxyConfig =
   | { mode: 'cidrs'; cidrs: string[] }
   | { mode: 'vercel' };   // Vercel overwrites XFF, so its rightmost entry is trustworthy
 
+// Reusable scratch for parseIp6Into (whose params these mirror): parsing an address is
+// synchronous and never interleaves, so one shared pair avoids per-check allocation.
 const W = new Uint32Array(4), G = new Uint16Array(8);
 const validIp = (s: string) => (s.indexOf(':') === -1 ? parseIp4(s) >= 0 : parseIp6Into(s, W, G));
 
@@ -53,19 +55,25 @@ function inCidr(ip: string, cidr: Cidr4 | Cidr6): boolean {
  */
 export function resolveClientIp(socketAddr: string | null | undefined, xff: string | null | undefined, cfg?: TrustedProxyConfig | null): string | null {
   const sock = socketAddr ? socketAddr.replace(/^::ffff:/, '') : null;   // Node dual-stack v4-mapped form
-  const mode = cfg?.mode ?? 'none';
-  if (mode === 'none' || !xff) return sock;
+  if (!cfg || cfg.mode === 'none' || !xff) return sock;
   const entries = xff.split(',').map((s) => s.trim()).filter(Boolean);
   if (!entries.length) return sock;
+
+  // An out-of-range index yields undefined, which falls back to the socket below.
   let candidate: string | undefined;
-  if (mode === 'hops') {
-    candidate = entries[entries.length - (cfg as { hops: number }).hops];
-  } else if (mode === 'vercel') {
-    candidate = entries[entries.length - 1];
-  } else if (mode === 'cidrs') {
-    const trusted = (cfg as { cidrs: string[] }).cidrs.map(parseCidr).filter((x): x is Cidr4 | Cidr6 => x !== null);
-    for (let i = entries.length - 1; i >= 0; i--) {
-      if (!trusted.some((t) => inCidr(entries[i], t))) { candidate = entries[i]; break; }
+  switch (cfg.mode) {
+    case 'hops':
+      candidate = entries[entries.length - cfg.hops];
+      break;
+    case 'vercel':
+      candidate = entries[entries.length - 1];
+      break;
+    case 'cidrs': {
+      const trusted = cfg.cidrs.map(parseCidr).filter((c): c is Cidr4 | Cidr6 => c !== null);
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (!trusted.some((t) => inCidr(entries[i], t))) { candidate = entries[i]; break; }
+      }
+      break;
     }
   }
   return candidate && validIp(candidate) ? candidate : sock;
