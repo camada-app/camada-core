@@ -9,6 +9,7 @@
 import { parseSnapshot, type SnapshotMeta } from './parse.js';
 import { Matcher, type MatchInput, type BlockReason } from './match.js';
 import type { CamadaRemoteConfig } from '../config.js';
+import { DEFAULT_REFRESH_MS } from '../constants.js';
 
 /** Like MatchResult, plus 'cold' for "never loaded yet" (fail open, mirrors the collector). */
 export interface Verdict { block: boolean; reason?: BlockReason | 'cold'; version?: string }
@@ -33,7 +34,7 @@ export class SnapshotClient {
 
   constructor(opts: SnapshotClientOptions) {
     this.opts = {
-      refreshMs: 30_000, fetchTimeoutMs: 3_000, mode: 'timer',
+      refreshMs: DEFAULT_REFRESH_MS, fetchTimeoutMs: 3_000, mode: 'timer',
       fetchImpl: opts.fetchImpl ?? fetch,
       ...opts,
     };

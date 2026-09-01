@@ -31,7 +31,9 @@ export function bodyShape(obj: unknown): Record<string, number> | null {
   if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return null;
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-    out[k] = typeof v === 'string' ? v.length : v === null || v === undefined ? 0 : JSON.stringify(v)?.length ?? 0;
+    if (typeof v === 'string') out[k] = v.length;
+    else if (v === null || v === undefined) out[k] = 0;
+    else out[k] = JSON.stringify(v)?.length ?? 0;   // undefined for functions/symbols -> 0
   }
   return out;
 }
