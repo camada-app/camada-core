@@ -2,6 +2,8 @@
 // request with a 200 ms budget; an in-process SDK can do better — batch, flush on size or
 // interval, and drain on process exit — but the same law holds: NOTHING here may ever throw
 // into the customer's request path, and a dead ingest must cost nothing but dropped telemetry.
+// Defaults (15 s / 500): every flush is one request and one R2 put at the analyst, so the bill scales
+// with instance count x flush cadence — not with traffic. Beacons ride the same batch as sig:1 rows.
 
 export interface EventQueueOptions {
   url: string;                    // ingest base, e.g. https://analyst.example.com
@@ -22,7 +24,8 @@ export class EventQueue {
   private readonly opts: Required<Omit<EventQueueOptions, 'fetchImpl'>> & { fetchImpl: typeof fetch };
 
   constructor(opts: EventQueueOptions) {
-    this.opts = { maxBatch: 200, maxQueue: 2000, flushMs: 5_000, timeoutMs: 2_000, fetchImpl: opts.fetchImpl ?? fetch, ...opts };
+    const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as EventQueueOptions;   // same rule as SnapshotClient: undefined never clobbers a default
+    this.opts = { maxBatch: 500, maxQueue: 2000, flushMs: 15_000, timeoutMs: 2_000, fetchImpl: opts.fetchImpl ?? fetch, ...given };
   }
 
   get size(): number { return this.q.length; }

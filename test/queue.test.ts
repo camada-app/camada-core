@@ -17,6 +17,25 @@ describe('EventQueue', () => {
     queue.stop();
   });
 
+  it('defaults to a 15 s flush and 500-event batches (puts at the analyst scale with flushes, not traffic)', async () => {
+    vi.useFakeTimers();
+    const batches: unknown[][] = [];
+    const queue = q(async (_u, init) => { batches.push(JSON.parse(init!.body as string)); return new Response(null, { status: 202 }); });
+    queue.push({ n: 1 });
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(batches).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(batches).toHaveLength(1);
+    for (let i = 0; i < 499; i++) queue.push({ i });
+    expect(batches).toHaveLength(1);
+    queue.push({ last: true });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(batches).toHaveLength(2);
+    expect(batches[1]).toHaveLength(500);
+    queue.stop();
+    vi.useRealTimers();
+  });
+
   it('flushes on the interval timer', async () => {
     vi.useFakeTimers();
     const batches: unknown[][] = [];
