@@ -19,10 +19,12 @@ from sibling checkouts.
   request path with `If-None-Match`; 304 keeps the snapshot and still refreshes tenant config;
   204 means "nothing published" (enforce nothing); any error keeps the previous snapshot.
   `timer` mode for long-lived Node processes, `lazy` mode for serverless/edge (`ensureFresh`
-  per request; cold start fails open).
+  per request; cold start fails open). With the `sdk` option every poll carries
+  `x-camada-sdk: <package>/<version>` so the analyst can show versions and nudge upgrades.
 - **`EventQueue`** — batched fire-and-forget shipping to `POST /e` (≤1000 per POST), bounded
-  queue with drop-oldest, interval + size-triggered flush, opt-in Node exit drain. Nothing in
-  the queue may ever throw into the request path.
+  queue with drop-oldest, interval + size-triggered flush, opt-in Node exit drain. The same `sdk`
+  option stamps `x-camada-sdk` on every batch. Nothing in the queue may ever throw into the
+  request path.
 - **`buildWireEvent`** — the collector-compatible wire shape, including the pinned `HDRS`
   header-bitmask order and the wire header order (`hord`) only an in-app SDK can see.
 - **Redaction (non-configurable-off)** — `Authorization`/`Cookie` values never leave (scheme

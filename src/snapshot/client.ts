@@ -21,6 +21,7 @@ export interface SnapshotClientOptions {
   fetchTimeoutMs?: number;
   mode?: 'timer' | 'lazy';        // timer: unref'd interval (long-lived Node); lazy: ensureFresh() per request (serverless/edge)
   fetchImpl?: typeof fetch;
+  sdk?: string;                   // '<package>/<version>': sent as x-camada-sdk on every poll (SDK-03)
 }
 
 export class SnapshotClient {
@@ -32,7 +33,7 @@ export class SnapshotClient {
   private loadedAt = 0;
   private loading: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
-  private readonly opts: Required<Omit<SnapshotClientOptions, 'fetchImpl'>> & { fetchImpl: typeof fetch };
+  private readonly opts: Required<Omit<SnapshotClientOptions, 'fetchImpl' | 'sdk'>> & { fetchImpl: typeof fetch; sdk?: string };
 
   constructor(opts: SnapshotClientOptions) {
     const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as SnapshotClientOptions;   // adapters forward optional options verbatim; undefined must not clobber a default
@@ -73,6 +74,7 @@ export class SnapshotClient {
   private async load(): Promise<void> {
     const headers: Record<string, string> = { authorization: `Bearer ${this.opts.token}` };
     if (this.etag) headers['if-none-match'] = this.etag;
+    if (this.opts.sdk) headers['x-camada-sdk'] = this.opts.sdk;
     const res = await this.opts.fetchImpl(this.opts.url, { headers, signal: AbortSignal.timeout(this.opts.fetchTimeoutMs) });
     if (res.status !== 200 && res.status !== 204 && res.status !== 304) return;   // 401/5xx: keep what we have
     this.loadedAt = Date.now();
