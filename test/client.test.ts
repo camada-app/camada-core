@@ -41,6 +41,20 @@ describe('SnapshotClient', () => {
     expect(c.config?.tenant).toBe('acme');
   });
 
+  it('sends x-camada-sdk on every poll when an sdk id is configured', async () => {
+    const seen: Array<string | null> = [];
+    const c = new SnapshotClient({
+      url: 'https://a.test/snapshot', token: 'st', mode: 'lazy', refreshMs: 0, sdk: '@camada/next/0.0.1',
+      fetchImpl: async (_u, init) => {
+        seen.push(new Headers(init?.headers).get('x-camada-sdk'));
+        return seen.length === 1 ? ok200() : new Response(null, { status: 304, headers: { 'x-camada-config': CONFIG } });
+      },
+    });
+    c.ensureFresh(); await settle();
+    c.ensureFresh(); await settle();   // the 304 path too
+    expect(seen).toEqual(['@camada/next/0.0.1', '@camada/next/0.0.1']);
+  });
+
   it('sends If-None-Match and keeps the snapshot on 304 — config still refreshes', async () => {
     let inm: string | null = null, calls = 0;
     const c = client(async (_url, init) => {

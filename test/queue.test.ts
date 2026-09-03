@@ -57,6 +57,17 @@ describe('EventQueue', () => {
     queue.stop();
   });
 
+  it('sends x-camada-sdk when an sdk id is configured, and omits it otherwise', async () => {
+    let hdr: string | null = 'unset';
+    const capture = async (_u: unknown, init?: RequestInit) => { hdr = new Headers(init?.headers).get('x-camada-sdk'); return new Response(null, { status: 202 }); };
+    const withId = q(capture as typeof fetch, { sdk: '@camada/node/0.0.1' });
+    withId.push({}); await withId.flush(); withId.stop();
+    expect(hdr).toBe('@camada/node/0.0.1');
+    const without = q(capture as typeof fetch);
+    without.push({}); await without.flush(); without.stop();
+    expect(hdr).toBeNull();
+  });
+
   it('hard-caps a flush at 1000 events (the server slices there anyway)', async () => {
     const sizes: number[] = [];
     const queue = q(async (_u, init) => { sizes.push(JSON.parse(init!.body as string).length); return new Response(null, { status: 202 }); }, { maxBatch: 5000, maxQueue: 5000 });
