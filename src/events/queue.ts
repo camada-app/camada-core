@@ -13,6 +13,7 @@ export interface EventQueueOptions {
   flushMs?: number;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
+  sdk?: string;                   // '<package>/<version>': sent as x-camada-sdk on every batch (SDK-03)
 }
 
 export class EventQueue {
@@ -21,7 +22,7 @@ export class EventQueue {
   private timer: ReturnType<typeof setInterval> | null = null;
   private exitInstalled = false;
   dropped = 0;                    // debug counter, not an API promise
-  private readonly opts: Required<Omit<EventQueueOptions, 'fetchImpl'>> & { fetchImpl: typeof fetch };
+  private readonly opts: Required<Omit<EventQueueOptions, 'fetchImpl' | 'sdk'>> & { fetchImpl: typeof fetch; sdk?: string };
 
   constructor(opts: EventQueueOptions) {
     const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as EventQueueOptions;   // same rule as SnapshotClient: undefined never clobbers a default
@@ -49,12 +50,14 @@ export class EventQueue {
     if (this.inflight) { waitUntil?.(this.inflight); return this.inflight; }   // edge runtimes must still hold the isolate open
     if (this.q.length === 0) return Promise.resolve();
     this.inflight = (async () => {
+      const headers: Record<string, string> = { 'x-tenant': this.opts.token, 'content-type': 'application/json' };
+      if (this.opts.sdk) headers['x-camada-sdk'] = this.opts.sdk;
       while (this.q.length > 0) {
         const batch = this.q.splice(0, 1000);
         try {
           await this.opts.fetchImpl(`${this.opts.url}/e`, {
             method: 'POST',
-            headers: { 'x-tenant': this.opts.token, 'content-type': 'application/json' },
+            headers,
             body: JSON.stringify(batch),
             signal: AbortSignal.timeout(this.opts.timeoutMs),
           });
