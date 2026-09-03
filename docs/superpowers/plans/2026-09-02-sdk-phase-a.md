@@ -124,7 +124,7 @@ export const SDK_ID = `${pkg.name}/${pkg.version}`;
 tsconfig: add `"resolveJsonModule": true` to compilerOptions.
 `camada.ts`: import `SDK_ID`; pass `sdk: SDK_ID` to both `new SnapshotClient({...})` and `new EventQueue({...})`. In the block branch after `ev.st = 403;` add `ev.blk = v.reason;   // SDK-01: the block reason rides the event so the analyst counts SDK blocks, not the app's own 403s`.
 
-- [ ] **Step 5: Run** `npm test && npm run check && npm run build` → green. Verify `grep -c '@camada/node/' dist/index.js` ≥ 1.
+- [ ] **Step 5: Run** `npm test && npm run check && npm run build` → green. Verify `grep -c '"@camada/node"' dist/chunk-*.js` ≥ 1 (name and version are inlined as two literals).
 - [ ] **Step 6: README:** step 3 becomes "Blocked ip/path → `403` with `x-block-reason` before your app; the event still ships with `st: 403` and `blk: <reason>`." Add to step 1: "every poll and batch carries `x-camada-sdk: @camada/node/<version>`."
 - [ ] **Step 7: Simplifier + review, commit** `feat(node): blk on blocked events; x-camada-sdk identity header`.
 
@@ -206,7 +206,7 @@ export function buildEvent(req: Request, path: string, ip: string | null, rid: s
 ```
 `src/version.ts`: same as node (`import pkg from '../package.json'`). tsconfig `resolveJsonModule: true`. `engine.ts`: `sdk: SDK_ID` on both `SnapshotClient` and `EventQueue`.
 
-- [ ] **Step 5: Run** `npm test && npm run check && npm run build` (edge-safety suite must stay green: json import is inlined by esbuild). Verify `grep -c '@camada/next/' dist/index.js` ≥ 1.
+- [ ] **Step 5: Run** `npm test && npm run check && npm run build` (edge-safety suite must stay green: json import is inlined by esbuild). Verify `grep -c '"@camada/next"' dist/index.js` ≥ 1 (two literals).
 - [ ] **Step 6: README:** "Blocked requests ship with `st: 403`" → "… with `st: 403` and `blk: <reason>`; the beacon route handlers ship the same event when they deny." Mention `x-camada-sdk`.
 - [ ] **Step 7: Simplifier + review, commit** `feat(next): blk on blocked events incl. beacon-route denies; x-camada-sdk identity header`.
 
