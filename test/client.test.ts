@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { SnapshotClient } from '../src/index.js';
 
-const bin = readFileSync(new URL('./fixtures/snap-basic.bin', import.meta.url));
+const bin = readFileSync(new URL('./fixtures/blk3/v3-basic.bin', import.meta.url));
 // compact, as the server sends it — a header value cannot carry the pretty-printed file
-const meta = JSON.stringify(JSON.parse(readFileSync(new URL('./fixtures/snap-basic.meta.json', import.meta.url), 'utf8')));
+const meta = JSON.stringify(JSON.parse(readFileSync(new URL('./fixtures/blk3/v3-basic.meta.json', import.meta.url), 'utf8')));
 const CONFIG = JSON.stringify({ tenant: 'acme', beacon: true, sample: 1, exclude: [], trusted_proxy: { mode: 'none' }, poll_seconds: 30 });
 
 // 200 body frame: [u32 LE meta-length][meta JSON][BLK3 bin]
@@ -29,7 +29,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10));
 describe('SnapshotClient', () => {
   it('is cold (fail open) before the first load completes', () => {
     const c = client(() => new Promise(() => {}));   // never resolves
-    expect(c.verdict({ ip: '203.0.113.66' })).toEqual({ block: false, reason: 'cold' });
+    expect(c.verdict({ ip: '203.0.113.66' })).toEqual({ block: false, challenge: false, allowed: false, reason: 'cold' });
   });
 
   it('loads on 200, matches, and exposes the config', async () => {
@@ -96,7 +96,7 @@ describe('SnapshotClient', () => {
     const c = client(async () => (++calls === 1 ? ok200() : new Response(null, { status: 204, headers: { 'x-camada-config': CONFIG } })));
     c.ensureFresh(); await settle();
     c.ensureFresh(); await settle();
-    expect(c.verdict({ ip: '203.0.113.66' })).toEqual({ block: false });
+    expect(c.verdict({ ip: '203.0.113.66' })).toEqual({ block: false, challenge: false, allowed: false });
   });
 
   it('runs a single load at a time', async () => {
@@ -174,5 +174,47 @@ describe('SnapshotClient', () => {
     expect(calls).toBe(at);
     expect(calls).toBeGreaterThanOrEqual(2);
     vi.useRealTimers();
+  });
+});
+
+describe('snapshotVersion', () => {
+  const header = async (opts: { snapshotVersion?: 3 | 4 } = {}) => {
+    let seen: string | null = 'unset';
+    const c = new SnapshotClient({
+      url: 'https://a.test/snapshot', token: 'st', mode: 'lazy', refreshMs: 0,
+      fetchImpl: async (_u, i) => { seen = new Headers(i?.headers).get('x-camada-snapshot'); return ok200(); },
+      ...opts,
+    });
+    c.ensureFresh();
+    await vi.waitFor(() => expect(seen).not.toBe('unset'));
+    return seen;
+  };
+
+  it('asks for v4 by default', async () => {
+    expect(await header()).toBe('4');
+  });
+
+  it('omits the header when pinned to 3', async () => {
+    expect(await header({ snapshotVersion: 3 })).toBeNull();
+  });
+});
+
+describe('format switch', () => {
+  // edge-analyst serves the v3 and v4 bodies of one publish under the same meta.version,
+  // distinguished only by etag. A v4 asker on a tenant with no v4 snapshot yet gets the v3
+  // body; when v4 lands, the client must re-parse instead of keeping the v3 matcher.
+  it('re-parses when the etag changes under an unchanged version', async () => {
+    const v3 = readFileSync(new URL('./fixtures/blk3/v3-basic.bin', import.meta.url));
+    const v4 = readFileSync(new URL('./fixtures/blk3/v4-basic.bin', import.meta.url));
+    const shared = JSON.stringify({ ...JSON.parse(readFileSync(new URL('./fixtures/blk3/v4-basic.meta.json', import.meta.url), 'utf8')), version: 'same' });
+    const bodies = [
+      new Response(frame(shared, new Uint8Array(v3)), { status: 200, headers: { etag: '"same"', 'x-camada-config': CONFIG } }),
+      new Response(frame(shared, new Uint8Array(v4)), { status: 200, headers: { etag: '"same-v4"', 'x-camada-config': CONFIG } }),
+    ];
+    const c = client(async () => bodies.shift()!);
+    c.ensureFresh();
+    await vi.waitFor(() => expect(c.matcher?.snap.format).toBe(3));
+    c.ensureFresh();
+    await vi.waitFor(() => expect(c.matcher?.snap.format).toBe(4));
   });
 });
