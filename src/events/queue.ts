@@ -5,6 +5,8 @@
 // Defaults (15 s / 500): every flush is one request and one R2 put at the analyst, so the bill scales
 // with instance count x flush cadence — not with traffic. Beacons ride the same batch as sig:1 rows.
 
+import { logRateLimited } from '../guarded.js';
+
 export interface EventQueueOptions {
   url: string;                    // ingest base, e.g. https://analyst.example.com
   token: string;                  // ingest token (x-tenant header)
@@ -16,6 +18,12 @@ export interface EventQueueOptions {
   sdk?: string;                   // '<package>/<version>': sent as x-camada-sdk on every batch (SDK-03)
 }
 
+// Never store the bare global: workerd rejects `fetch` invoked with a receiver other than the
+// global scope ("Illegal invocation"), and storing it on an options object means every call is
+// `opts.fetchImpl(...)` — a method call. The closure resolves `fetch` against the global scope at
+// call time, and callers who hand us a bare global are covered by `send()` below.
+const defaultFetch: typeof fetch = (input, init) => fetch(input, init);
+
 export class EventQueue {
   private q: unknown[] = [];
   private inflight: Promise<void> | null = null;
@@ -26,7 +34,7 @@ export class EventQueue {
 
   constructor(opts: EventQueueOptions) {
     const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as EventQueueOptions;   // same rule as SnapshotClient: undefined never clobbers a default
-    this.opts = { maxBatch: 500, maxQueue: 2000, flushMs: 15_000, timeoutMs: 2_000, fetchImpl: opts.fetchImpl ?? fetch, ...given };
+    this.opts = { maxBatch: 500, maxQueue: 2000, flushMs: 15_000, timeoutMs: 2_000, fetchImpl: defaultFetch, ...given };
   }
 
   get size(): number { return this.q.length; }
@@ -52,16 +60,22 @@ export class EventQueue {
     this.inflight = (async () => {
       const headers: Record<string, string> = { 'x-tenant': this.opts.token, 'content-type': 'application/json' };
       if (this.opts.sdk) headers['x-camada-sdk'] = this.opts.sdk;
+      const send = this.opts.fetchImpl;   // a local, so the call has no receiver even if a caller handed us a bare global
       while (this.q.length > 0) {
         const batch = this.q.splice(0, 1000);
         try {
-          await this.opts.fetchImpl(`${this.opts.url}/e`, {
+          await send(`${this.opts.url}/e`, {
             method: 'POST',
             headers,
             body: JSON.stringify(batch),
             signal: AbortSignal.timeout(this.opts.timeoutMs),
           });
-        } catch { this.dropped += batch.length; }
+        } catch (err) {
+          this.dropped += batch.length;
+          // Dropping telemetry is by design, doing it silently is not: a mount that can never
+          // reach ingest looks identical to a healthy one otherwise (finding 030).
+          logRateLimited(err);
+        }
       }
     })().finally(() => { this.inflight = null; });
     waitUntil?.(this.inflight);
