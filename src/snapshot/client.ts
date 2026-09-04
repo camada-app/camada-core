@@ -9,6 +9,7 @@
 import { parseSnapshot, type SnapshotMeta } from './parse.js';
 import { Matcher, type MatchInput, type MatchReason } from './match.js';
 import type { CamadaRemoteConfig } from '../config.js';
+import { logRateLimited } from '../guarded.js';
 import { DEFAULT_REFRESH_MS } from '../constants.js';
 
 /** Like MatchResult, plus 'cold' for "never loaded yet" (fail open, mirrors the collector). */
@@ -31,6 +32,10 @@ export interface SnapshotClientOptions {
   snapshotVersion?: 3 | 4;        // 4 (default) asks for the v4 allow/challenge sections; 3 opts out
 }
 
+// See the note in events/queue.ts: the bare global must never be stored, because calling it as
+// `this.opts.fetchImpl(...)` gives it the wrong receiver and workerd refuses.
+const defaultFetch: typeof fetch = (input, init) => fetch(input, init);
+
 export class SnapshotClient {
   matcher: Matcher | null = null;
   config: CamadaRemoteConfig | null = null;
@@ -46,7 +51,7 @@ export class SnapshotClient {
     const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as SnapshotClientOptions;   // adapters forward optional options verbatim; undefined must not clobber a default
     this.opts = {
       refreshMs: DEFAULT_REFRESH_MS, fetchTimeoutMs: 3_000, mode: 'timer', snapshotVersion: 4,
-      fetchImpl: opts.fetchImpl ?? fetch,
+      fetchImpl: defaultFetch,
       ...given,
     };
     this.pinned = given.refreshMs !== undefined;
@@ -74,7 +79,7 @@ export class SnapshotClient {
    *  a full-interval comparison makes every other tick a no-op (effective cadence 2×). */
   ensureFresh(waitUntil?: (p: Promise<unknown>) => void): void {
     if (this.loading || Date.now() - this.loadedAt <= this.refreshMs * 0.9) return;
-    this.loading = this.load().catch(() => {}).finally(() => { this.loading = null; });
+    this.loading = this.load().catch(logRateLimited).finally(() => { this.loading = null; });   // a poll that can never succeed must not be silent (finding 030)
     waitUntil?.(this.loading);
   }
 
@@ -83,7 +88,8 @@ export class SnapshotClient {
     if (this.etag) headers['if-none-match'] = this.etag;
     if (this.opts.sdk) headers['x-camada-sdk'] = this.opts.sdk;
     if (this.opts.snapshotVersion === 4) headers['x-camada-snapshot'] = '4';
-    const res = await this.opts.fetchImpl(this.opts.url, { headers, signal: AbortSignal.timeout(this.opts.fetchTimeoutMs) });
+    const get = this.opts.fetchImpl;   // a local, so the call has no receiver even if a caller handed us a bare global
+    const res = await get(this.opts.url, { headers, signal: AbortSignal.timeout(this.opts.fetchTimeoutMs) });
     if (res.status !== 200 && res.status !== 204 && res.status !== 304) return;   // 401/5xx: keep what we have
     this.loadedAt = Date.now();
     this.readConfig(res);
