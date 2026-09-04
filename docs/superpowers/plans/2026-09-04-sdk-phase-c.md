@@ -2648,3 +2648,31 @@ Claude-Session: https://claude.ai/code/session_014GA5a631prhERB2zJ2by1n
 MSG
 )"
 ```
+
+
+---
+
+## Execution notes (2026-09-04)
+
+What the plan did not anticipate, recorded so the next reader is not misled by the task text above:
+
+1. **The golden fixtures landed mid-execution.** `edge-analyst/fixtures/blk3/` appeared while Task 1 was in review, so the local stand-in builder (`test/fixtures/v4/build.mjs`, `snap-v4.*`, the hand-written `cases-v4.json`) was deleted rather than kept alongside them, and `test/fixtures/blk3/` became the single golden source. The old `snap-basic.*` / `snap-empty.*` / `cases.json` layout was retired with it: `v3-basic.bin` is byte-identical, and camada-node's and camada-next's harnesses were repointed at `blk3/v3-basic.*` through the `file:` symlink. `conformance.test.ts` now drives all 131 reference-generated cases (v3 + v4) and asserts the whole `{ block, challenge, allowed, reason }` object. **Both byte-layout readings recorded as assumptions in Task 1 were confirmed by the golden bytes.**
+
+2. **Tasks 1-3 shipped as one commit.** The fixture swap ties the parser, the matcher and the conformance table together — committing the parser alone would have left the suite red — so `127a81a` covers SDK-02 and the challenge kit.
+
+3. **Adapter tests use each repo's existing harness, not the shapes sketched in Tasks 4 and 5.** `camada-node/test/harness.ts` already spins a real `node:http` server, so the node challenge suite drives real HTTP with `fetch` instead of the fake `req`/`res` pair the plan sketched; `camada-next` drives `NextRequest` under `@vitest-environment edge-runtime`. Both harnesses gained a `v4` flag and a `snapshotVersions` recorder rather than a copied fixture directory.
+
+4. **Widening the matcher's result broke `camada-next/test/middleware.test.ts` at the type level** (the middleware may now return a promise). Every `handler(...)` call site there is awaited.
+
+5. **Findings applied beyond the plan** (from the review passes and the live run):
+   - `safeReturnTo` rejects non-ASCII as well as control characters — the value goes into a `Location` header and Node throws `ERR_INVALID_CHAR` above 0xff.
+   - The challenge kit refuses a **null client ip**, and all three adapters fail open rather than challenge a client they cannot identify; otherwise one solve would mint a `_cch` every unidentified client could present.
+   - `challengePage` escapes `<` inside the inline `<script>`, clamps `bits` to 1..32; `parseFormBody` returns a null-prototype object.
+   - `SnapshotClient.load()` re-parses when the **etag** moves under an unchanged `meta.version`: edge-analyst serves the v3 and v4 bodies of one publish with the same version string and different etags, so the version guard alone would have pinned a tenant to its v3 matcher forever after it gained a v4 snapshot.
+   - `serveChallenge()` (node) marks the request so the response-finish hook stands down — the on-demand path was shipping two events for one request.
+
+6. **`@camada/hono` reports the client protocol** from `request.cf.httpProtocol` (never a forwarded header), which ea's `TAP_CAPS['sdk-hono'] = 503` grants TRUE_PROTO on the strength of. That requirement arrived from the orchestrator after Task 6 was written.
+
+7. **Task 8's live pass used a stub analyst**, not `edge-analyst npm run dev`: another stream's `workerd` held port 8797 and answered 401, which looks exactly like a broken SDK. The stub serves the same golden v4 bytes. Both examples were driven end to end through it — block, allow-beats-block, challenge served, challenge solved, cookie admitted, cookie refused for a different ip, and the shipped events checked.
+
+8. **The Fable rate limit was exhausted during Task 8**, so the last review pass ran on an equivalent reviewer on another model instead of the repo-local `fable-reviewer`.
