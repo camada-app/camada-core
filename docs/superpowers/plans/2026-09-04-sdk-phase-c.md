@@ -8,27 +8,27 @@
 
 **Tech Stack:** TypeScript 5.7, tsup (esm+cjs+dts), vitest 3, Node ≥18, Hono ≥4 (peer), no runtime dependencies outside the `@camada/*` file: siblings.
 
-**Spec:** `/Users/gabe/Github/camada/docs/superpowers/specs/2026-09-02-saas-requirements.md` (SDK-02, SDK-04, SEC-07, RULES-08, LISTS-10)
-**Contracts:** `/Users/gabe/Github/camada/docs/orchestration/contracts.md` §A3, §D2, §H (dogfood)
-**Decisions:** `/Users/gabe/Github/camada/docs/orchestration/decisions.md` D4, D31, D32, D33, D36
+**Spec:** `/Users/gabe/Github/camada-all/camada/docs/superpowers/specs/2026-09-02-saas-requirements.md` (SDK-02, SDK-04, SEC-07, RULES-08, LISTS-10)
+**Contracts:** `/Users/gabe/Github/camada-all/camada/docs/orchestration/contracts.md` §A3, §D2, §H (dogfood)
+**Decisions:** `/Users/gabe/Github/camada-all/camada/docs/orchestration/decisions.md` D4, D31, D32, D33, D36
 
 ## Global Constraints
 
 - Repos and branches: `camada-core`, `camada-node`, `camada-next` on `saas-phase-a`; `camada-node-example`, `camada-next-example` on `main`; `camada-hono` is a NEW repo (`git init`, branch `main`).
-- Never `git push`. Never `wrangler deploy`. Never edit `docs/orchestration/contracts.md`. Never edit `~/Github/camada/edge-analyst` or any other stream's repo.
-- After EVERY task: agent `fable-simplifier` on the diff, then agent `fable-reviewer`; fix findings; commit with a conventional message. Then update `/Users/gabe/Github/camada/docs/orchestration/status/sdk.md`.
+- Never `git push`. Never `wrangler deploy`. Never edit `docs/orchestration/contracts.md`. Never edit `~/Github/camada-all/camada/edge-analyst` or any other stream's repo.
+- After EVERY task: agent `fable-simplifier` on the diff, then agent `fable-reviewer`; fix findings; commit with a conventional message. Then update `/Users/gabe/Github/camada-all/camada/docs/orchestration/status/sdk.md`.
 - Commit message trailer (every commit): `Claude-Session: https://claude.ai/code/session_014GA5a631prhERB2zJ2by1n`
 - Fail-open law (plan.md INT-2, unchanged): nothing in the SDK may throw into the customer's request path. Every new public entry point runs inside `guarded`/`guardedAsync`.
 - Edge-runtime safety (unchanged): `@camada/core` and every module in `@camada/next`'s middleware import graph use Web APIs only — no `node:` imports. `camada-next/test/edge-safety.test.ts` proves it; it must stay green.
 - Versions after this plan: `@camada/core` `0.1.0`, `@camada/node` `0.1.0`, `@camada/next` `0.1.0`, `@camada/hono` `0.1.0`. `@camada/browser` and `@camada/react` stay `0.0.1` (untouched).
 - Wire constants that are contract, not choice: cookie `_cch`; TTL 1 h; PoW SHA-256 with **16** leading zero bits; node verify endpoint `POST /__camada/challenge`; next verify endpoint `POST /api/camada/challenge`; served event `{ st: 403, blk: "challenge" }`; passed event `{ st: 200, ch: 1 }`; header `x-camada-snapshot: 4`; non-HTML deny body `{"error":"challenge_required"}` with status 403.
-- Assumptions recorded because edge-analyst's golden fixtures do not exist yet (see Task 1 note). They go into status/sdk.md under "Interface changes" and are re-verified when `~/Github/camada/edge-analyst/fixtures/blk3/` lands.
+- Assumptions recorded because edge-analyst's golden fixtures do not exist yet (see Task 1 note). They go into status/sdk.md under "Interface changes" and are re-verified when `~/Github/camada-all/camada/edge-analyst/fixtures/blk3/` lands.
 
 ---
 
 ## File Structure
 
-**camada-core** (`~/Github/camada-core`)
+**camada-core** (`~/Github/camada-all/camada-core`)
 - Modify `src/snapshot/parse.ts` — BLK3 container parser; gains v4 magic tolerance, sections 10–13, meta `allow`/`challenge`, `format` field, `RangeSet`.
 - Modify `src/snapshot/match.ts` — three-way matcher, order allow → block → challenge.
 - Modify `src/snapshot/client.ts` — `snapshotVersion` option, `Verdict` gains `challenge`/`allowed`.
@@ -42,14 +42,14 @@
 - Create `test/fixtures/snap-v4.bin`, `test/fixtures/snap-v4.meta.json`, `test/fixtures/cases-v4.json` (hand-written expectations).
 - Create `test/challenge.test.ts`, extend `test/conformance.test.ts`, `test/parse.test.ts`, `test/client.test.ts`.
 
-**camada-node** (`~/Github/camada-node`)
+**camada-node** (`~/Github/camada-all/camada-node`)
 - Modify `src/env.ts` — `secret` in `ResolvedEnv`.
 - Create `src/challenge.ts` — node:crypto glue + the served/verify handlers.
 - Modify `src/camada.ts` — options `challenge`, `challengePath`, `snapshotVersion`; challenge branch; `serveChallenge()` public method.
 - Modify `src/index.ts` — `serveChallenge` on the default export.
 - Create `test/challenge.test.ts`; modify `test/harness.ts` if needed.
 
-**camada-next** (`~/Github/camada-next`)
+**camada-next** (`~/Github/camada-all/camada-next`)
 - Modify `src/engine.ts` — `secret`, `challengeEnabled`, `snapshotVersion`.
 - Create `src/challenge.ts` — async glue, `challengeResponse()`, `verifyChallenge()`, `challengeGate()`, `isChallengeRoute()`.
 - Modify `src/middleware.ts` — challenge branch (async return), bypass for the verify route.
@@ -57,24 +57,24 @@
 - Modify `src/index.ts` — export `challengeGate`.
 - Create `test/challenge.test.ts`.
 
-**camada-hono** (`~/Github/camada-hono`, new)
+**camada-hono** (`~/Github/camada-all/camada-hono`, new)
 - Create `package.json`, `tsconfig.json`, `tsup.config.ts`, `.gitignore`, `LICENSE`, `README.md`.
 - Create `src/index.ts`, `src/camada.ts`, `src/env.ts`, `src/version.ts`.
 - Create `test/camada.test.ts`.
 
 **Examples**
-- Modify `~/Github/camada-node-example/server.js` — `/challenge-me`.
-- Create `~/Github/camada-next-example/app/challenge-me/route.ts`.
+- Modify `~/Github/camada-all/camada-node-example/server.js` — `/challenge-me`.
+- Create `~/Github/camada-all/camada-next-example/app/challenge-me/route.ts`.
 
 ---
 
 ### Task 1: core — BLK3 v4 container parsing
 
 **Files:**
-- Modify: `~/Github/camada-core/src/snapshot/parse.ts`
-- Create: `~/Github/camada-core/test/fixtures/v4/build.mjs`
-- Create: `~/Github/camada-core/test/fixtures/snap-v4.bin` (generated), `snap-v4.meta.json` (generated)
-- Test: `~/Github/camada-core/test/parse.test.ts` (extend)
+- Modify: `~/Github/camada-all/camada-core/src/snapshot/parse.ts`
+- Create: `~/Github/camada-all/camada-core/test/fixtures/v4/build.mjs`
+- Create: `~/Github/camada-all/camada-core/test/fixtures/snap-v4.bin` (generated), `snap-v4.meta.json` (generated)
+- Test: `~/Github/camada-all/camada-core/test/parse.test.ts` (extend)
 
 **Interfaces:**
 - Consumes: nothing.
@@ -87,7 +87,7 @@ Two readings are pinned here because edge-analyst has not published `fixtures/bl
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `~/Github/camada-core/test/parse.test.ts`:
+Append to `~/Github/camada-all/camada-core/test/parse.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest';
@@ -130,7 +130,7 @@ describe('BLK3 v4 container', () => {
 
 - [ ] **Step 2: Write the fixture builder and generate the fixture**
 
-Create `~/Github/camada-core/test/fixtures/v4/build.mjs`. It is a *local stand-in* for `edge-analyst/scripts/gen-fixtures.mjs`; the range/section maths is copied from `edge-analyst/src/snapshot.js` (the format owner) so the bytes are the format owner's, not an invention.
+Create `~/Github/camada-all/camada-core/test/fixtures/v4/build.mjs`. It is a *local stand-in* for `edge-analyst/scripts/gen-fixtures.mjs`; the range/section maths is copied from `edge-analyst/src/snapshot.js` (the format owner) so the bytes are the format owner's, not an invention.
 
 ```js
 // Local BLK3 v4 golden builder — a stand-in until edge-analyst publishes fixtures/blk3/.
@@ -236,17 +236,17 @@ writeFileSync(`${dir}snap-v4.meta.json`, JSON.stringify(snap.meta, null, 2));
 console.log('wrote snap-v4.bin + snap-v4.meta.json');
 ```
 
-Run: `cd ~/Github/camada-core && node test/fixtures/v4/build.mjs`
+Run: `cd ~/Github/camada-all/camada-core && node test/fixtures/v4/build.mjs`
 Expected: `wrote snap-v4.bin + snap-v4.meta.json`
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `cd ~/Github/camada-core && npx vitest run test/parse.test.ts`
+Run: `cd ~/Github/camada-all/camada-core && npx vitest run test/parse.test.ts`
 Expected: FAIL — `s.format` is undefined, `s.allow` is undefined.
 
 - [ ] **Step 4: Implement the parser**
 
-Replace the header comment and the whole body of `~/Github/camada-core/src/snapshot/parse.ts` with:
+Replace the header comment and the whole body of `~/Github/camada-all/camada-core/src/snapshot/parse.ts` with:
 
 ```ts
 // BLK3 snapshot parser, ported from edge-analyst src/blocklist.js load() (reference implementation).
@@ -368,7 +368,7 @@ export function parseSnapshot(bin: ArrayBuffer | Uint8Array, meta: SnapshotMeta)
 }
 ```
 
-Export the new types from `~/Github/camada-core/src/index.ts` by replacing line 1 with:
+Export the new types from `~/Github/camada-all/camada-core/src/index.ts` by replacing line 1 with:
 
 ```ts
 export { parseSnapshot, type Snapshot, type SnapshotMeta, type SnapshotSetMeta, type RangeSet } from './snapshot/parse.js';
@@ -376,7 +376,7 @@ export { parseSnapshot, type Snapshot, type SnapshotMeta, type SnapshotSetMeta, 
 
 - [ ] **Step 5: Run the tests**
 
-Run: `cd ~/Github/camada-core && npm test && npm run check`
+Run: `cd ~/Github/camada-all/camada-core && npm test && npm run check`
 Expected: PASS (all existing tests plus the three new ones).
 
 - [ ] **Step 6: Review and commit**
@@ -384,7 +384,7 @@ Expected: PASS (all existing tests plus the three new ones).
 Run agent `fable-simplifier` on the diff, then agent `fable-reviewer`; apply findings.
 
 ```bash
-cd ~/Github/camada-core
+cd ~/Github/camada-all/camada-core
 git add -A src test
 git commit -m "$(cat <<'MSG'
 feat(core): BLK3 v4 container — allow/challenge sections 10-13 and side meta
@@ -399,11 +399,11 @@ MSG
 ### Task 2: core — three-way match (allow → block → challenge) and `snapshotVersion`
 
 **Files:**
-- Modify: `~/Github/camada-core/src/snapshot/match.ts`
-- Modify: `~/Github/camada-core/src/snapshot/client.ts`
-- Modify: `~/Github/camada-core/src/index.ts`
-- Create: `~/Github/camada-core/test/fixtures/cases-v4.json`
-- Test: `~/Github/camada-core/test/conformance.test.ts` (extend), `~/Github/camada-core/test/client.test.ts` (extend)
+- Modify: `~/Github/camada-all/camada-core/src/snapshot/match.ts`
+- Modify: `~/Github/camada-all/camada-core/src/snapshot/client.ts`
+- Modify: `~/Github/camada-all/camada-core/src/index.ts`
+- Create: `~/Github/camada-all/camada-core/test/fixtures/cases-v4.json`
+- Test: `~/Github/camada-all/camada-core/test/conformance.test.ts` (extend), `~/Github/camada-all/camada-core/test/client.test.ts` (extend)
 
 **Interfaces:**
 - Consumes: `Snapshot`, `RangeSet` from Task 1.
@@ -416,7 +416,7 @@ MSG
 
 - [ ] **Step 1: Write the hand-derived expectation table**
 
-Create `~/Github/camada-core/test/fixtures/cases-v4.json`. Expectations are derived by hand from contracts §A3/§D2 (order allow → block → challenge), NOT from running the implementation — that is what makes this a conformance table.
+Create `~/Github/camada-all/camada-core/test/fixtures/cases-v4.json`. Expectations are derived by hand from contracts §A3/§D2 (order allow → block → challenge), NOT from running the implementation — that is what makes this a conformance table.
 
 ```json
 {
@@ -461,7 +461,7 @@ Create `~/Github/camada-core/test/fixtures/cases-v4.json`. Expectations are deri
 }
 ```
 
-Add to `~/Github/camada-core/test/conformance.test.ts` (keep everything already there):
+Add to `~/Github/camada-all/camada-core/test/conformance.test.ts` (keep everything already there):
 
 ```ts
 interface V4Case { input: MatchInput; expect: string }
@@ -487,12 +487,12 @@ describe('BLK3 v4 match order (allow -> block -> challenge)', () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd ~/Github/camada-core && npx vitest run test/conformance.test.ts`
+Run: `cd ~/Github/camada-all/camada-core && npx vitest run test/conformance.test.ts`
 Expected: FAIL — `r.allowed` / `r.challenge` are undefined, so every case labels as `block:…` or `none`.
 
 - [ ] **Step 3: Implement the matcher**
 
-Replace `~/Github/camada-core/src/snapshot/match.ts` with:
+Replace `~/Github/camada-all/camada-core/src/snapshot/match.ts` with:
 
 ```ts
 // Matcher: sub-microsecond checks over a parsed Snapshot, ported from edge-analyst
@@ -656,7 +656,7 @@ export class Matcher {
 
 - [ ] **Step 4: Update the SnapshotClient**
 
-In `~/Github/camada-core/src/snapshot/client.ts`:
+In `~/Github/camada-all/camada-core/src/snapshot/client.ts`:
 
 Replace the `Verdict` interface and the import line with:
 
@@ -708,7 +708,7 @@ And replace `verdict()`:
   }
 ```
 
-Update `~/Github/camada-core/src/index.ts` line 2:
+Update `~/Github/camada-all/camada-core/src/index.ts` line 2:
 
 ```ts
 export { Matcher, type MatchInput, type MatchResult, type MatchReason, type BlockReason } from './snapshot/match.js';
@@ -716,7 +716,7 @@ export { Matcher, type MatchInput, type MatchResult, type MatchReason, type Bloc
 
 - [ ] **Step 5: Add the client test**
 
-Append to `~/Github/camada-core/test/client.test.ts` (reuse the file's existing fetch-stub helper style; if it has none, use this self-contained form):
+Append to `~/Github/camada-all/camada-core/test/client.test.ts` (reuse the file's existing fetch-stub helper style; if it has none, use this self-contained form):
 
 ```ts
 describe('snapshotVersion', () => {
@@ -749,7 +749,7 @@ describe('snapshotVersion', () => {
 
 - [ ] **Step 6: Run everything**
 
-Run: `cd ~/Github/camada-core && npm test && npm run check && npm run build`
+Run: `cd ~/Github/camada-all/camada-core && npm test && npm run check && npm run build`
 Expected: PASS. If `test/client.test.ts` or `test/parse.test.ts` assert on the old `{ block: false }` object shape with `toEqual`, update those assertions to the new three-flag shape — that is an intended contract change.
 
 - [ ] **Step 7: Review and commit**
@@ -757,7 +757,7 @@ Expected: PASS. If `test/client.test.ts` or `test/parse.test.ts` assert on the o
 Run agent `fable-simplifier` on the diff, then agent `fable-reviewer`; apply findings.
 
 ```bash
-cd ~/Github/camada-core
+cd ~/Github/camada-all/camada-core
 git add -A src test
 git commit -m "$(cat <<'MSG'
 feat(core): match() returns allow/block/challenge in that order; snapshotVersion asks for v4
@@ -772,12 +772,12 @@ MSG
 ### Task 3: core — the challenge kit (nonce, token, proof of work, page) and `TAP_HONO`
 
 **Files:**
-- Create: `~/Github/camada-core/src/challenge/format.ts`
-- Create: `~/Github/camada-core/src/challenge/verify.ts`
-- Create: `~/Github/camada-core/src/challenge/verify-async.ts`
-- Create: `~/Github/camada-core/src/challenge/page.ts`
-- Modify: `~/Github/camada-core/src/constants.ts`, `~/Github/camada-core/src/index.ts`, `~/Github/camada-core/package.json` (version `0.1.0`)
-- Test: `~/Github/camada-core/test/challenge.test.ts`
+- Create: `~/Github/camada-all/camada-core/src/challenge/format.ts`
+- Create: `~/Github/camada-all/camada-core/src/challenge/verify.ts`
+- Create: `~/Github/camada-all/camada-core/src/challenge/verify-async.ts`
+- Create: `~/Github/camada-all/camada-core/src/challenge/page.ts`
+- Modify: `~/Github/camada-all/camada-core/src/constants.ts`, `~/Github/camada-all/camada-core/src/index.ts`, `~/Github/camada-all/camada-core/package.json` (version `0.1.0`)
+- Test: `~/Github/camada-all/camada-core/test/challenge.test.ts`
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
@@ -795,7 +795,7 @@ MSG
 
 - [ ] **Step 1: Write the failing test**
 
-Create `~/Github/camada-core/test/challenge.test.ts`:
+Create `~/Github/camada-all/camada-core/test/challenge.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest';
@@ -937,7 +937,7 @@ describe('page', () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd ~/Github/camada-core && npx vitest run test/challenge.test.ts`
+Run: `cd ~/Github/camada-all/camada-core && npx vitest run test/challenge.test.ts`
 Expected: FAIL — module `../src/index.js` has no export `createChallenge`.
 
 - [ ] **Step 3: Write `src/challenge/format.ts`**
@@ -1256,7 +1256,7 @@ p{margin:.25rem 0;color:#555}
 
 - [ ] **Step 7: Wire the exports and the tap**
 
-In `~/Github/camada-core/src/constants.ts` replace lines 4–6 with:
+In `~/Github/camada-all/camada-core/src/constants.ts` replace lines 4–6 with:
 
 ```ts
 export const TAP_NODE = 'sdk-node';
@@ -1265,7 +1265,7 @@ export const TAP_HONO = 'sdk-hono';
 export type Tap = typeof TAP_NODE | typeof TAP_NEXT | typeof TAP_HONO;
 ```
 
-Append to `~/Github/camada-core/src/index.ts`:
+Append to `~/Github/camada-all/camada-core/src/index.ts`:
 
 ```ts
 export {
@@ -1283,11 +1283,11 @@ and update the constants export line:
 export { TAP_NODE, TAP_NEXT, TAP_HONO, type Tap, DEFAULT_REFRESH_MS, KILL_SWITCH_ENV } from './constants.js';
 ```
 
-Set `"version": "0.1.0"` in `~/Github/camada-core/package.json`.
+Set `"version": "0.1.0"` in `~/Github/camada-all/camada-core/package.json`.
 
 - [ ] **Step 8: Run everything**
 
-Run: `cd ~/Github/camada-core && npm test && npm run check && npm run build`
+Run: `cd ~/Github/camada-all/camada-core && npm test && npm run check && npm run build`
 Expected: PASS.
 
 - [ ] **Step 9: Review and commit**
@@ -1295,7 +1295,7 @@ Expected: PASS.
 Run agent `fable-simplifier` on the diff, then agent `fable-reviewer`; apply findings.
 
 ```bash
-cd ~/Github/camada-core
+cd ~/Github/camada-all/camada-core
 git add -A src test package.json
 git commit -m "$(cat <<'MSG'
 feat(core): challenge kit — stateless nonce, _cch token, 16-bit PoW, self-contained page
@@ -1310,11 +1310,11 @@ MSG
 ### Task 4: @camada/node — serve and verify the challenge
 
 **Files:**
-- Modify: `~/Github/camada-node/src/env.ts`
-- Create: `~/Github/camada-node/src/challenge.ts`
-- Modify: `~/Github/camada-node/src/camada.ts`, `~/Github/camada-node/src/index.ts`
-- Modify: `~/Github/camada-node/package.json` (version `0.1.0`)
-- Test: `~/Github/camada-node/test/challenge.test.ts`
+- Modify: `~/Github/camada-all/camada-node/src/env.ts`
+- Create: `~/Github/camada-all/camada-node/src/challenge.ts`
+- Modify: `~/Github/camada-all/camada-node/src/camada.ts`, `~/Github/camada-all/camada-node/src/index.ts`
+- Modify: `~/Github/camada-all/camada-node/package.json` (version `0.1.0`)
+- Test: `~/Github/camada-all/camada-node/test/challenge.test.ts`
 
 **Interfaces:**
 - Consumes: from `@camada/core` — `createChallenge`, `challengePage`, `challengeCookie`, `safeReturnTo`, `wantsHtml`, `parseFormBody`, `CHALLENGE_COOKIE`; `SnapshotClient.verdict()` now returning `{ block, challenge, allowed, reason, version }`.
@@ -1322,7 +1322,7 @@ MSG
 
 - [ ] **Step 1: Write the failing test**
 
-Create `~/Github/camada-node/test/challenge.test.ts`. Inspect `test/harness.ts` first and reuse its snapshot-serving stub; the shape below assumes a `makeCamada`-style helper — adapt names to what the harness actually exports, keeping the assertions identical.
+Create `~/Github/camada-all/camada-node/test/challenge.test.ts`. Inspect `test/harness.ts` first and reuse its snapshot-serving stub; the shape below assumes a `makeCamada`-style helper — adapt names to what the harness actually exports, keeping the assertions identical.
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -1430,12 +1430,12 @@ Reuse the existing fakes; do not write a second set.
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd ~/Github/camada-node && npx vitest run test/challenge.test.ts`
+Run: `cd ~/Github/camada-all/camada-node && npx vitest run test/challenge.test.ts`
 Expected: FAIL — the engine has no challenge branch, so `/cart` is not handled.
 
 - [ ] **Step 3: Add `secret` to the resolved env**
 
-In `~/Github/camada-node/src/env.ts`, add `secret: string;` to `ResolvedEnv` (with the comment `// HMAC key for the challenge nonce/cookie — never leaves the process`), and in the returned object:
+In `~/Github/camada-all/camada-node/src/env.ts`, add `secret: string;` to `ResolvedEnv` (with the comment `// HMAC key for the challenge nonce/cookie — never leaves the process`), and in the returned object:
 
 ```ts
     secret: env.CAMADA_KEY || `${ingestToken}.${snapToken}`,
@@ -1491,7 +1491,7 @@ export function writeChallengeJson(res: ServerResponse): void {
 
 - [ ] **Step 5: Wire the engine**
 
-In `~/Github/camada-node/src/camada.ts`:
+In `~/Github/camada-all/camada-node/src/camada.ts`:
 
 Extend the core import with `challengePage, challengeCookie, safeReturnTo, wantsHtml, parseFormBody, CHALLENGE_COOKIE, type ChallengeKit` and add:
 
@@ -1601,17 +1601,17 @@ Add the three methods (place them after `relayBeacon`):
   }
 ```
 
-In `~/Github/camada-node/src/index.ts`, add to the default export object:
+In `~/Github/camada-all/camada-node/src/index.ts`, add to the default export object:
 
 ```ts
   serveChallenge: (req: IncomingMessage, res: ServerResponse) => getDefault().serveChallenge(req, res),
 ```
 
-Set `"version": "0.1.0"` in `~/Github/camada-node/package.json`.
+Set `"version": "0.1.0"` in `~/Github/camada-all/camada-node/package.json`.
 
 - [ ] **Step 6: Run the tests**
 
-Run: `cd ~/Github/camada-core && npm run build && cd ~/Github/camada-node && npm test && npm run check && npm run build`
+Run: `cd ~/Github/camada-all/camada-core && npm run build && cd ~/Github/camada-all/camada-node && npm test && npm run check && npm run build`
 Expected: PASS (existing 18 tests plus the new challenge suite).
 
 - [ ] **Step 7: Review and commit**
@@ -1619,7 +1619,7 @@ Expected: PASS (existing 18 tests plus the new challenge suite).
 Run agent `fable-simplifier` on the diff, then agent `fable-reviewer`; apply findings.
 
 ```bash
-cd ~/Github/camada-node
+cd ~/Github/camada-all/camada-node
 git add -A src test package.json
 git commit -m "$(cat <<'MSG'
 feat(node): first-party challenge — PoW page, POST /__camada/challenge, _cch cookie (SDK-04)
@@ -1634,11 +1634,11 @@ MSG
 ### Task 5: @camada/next — challenge in the middleware and the route handler
 
 **Files:**
-- Modify: `~/Github/camada-next/src/engine.ts`
-- Create: `~/Github/camada-next/src/challenge.ts`
-- Modify: `~/Github/camada-next/src/middleware.ts`, `~/Github/camada-next/src/route.ts`, `~/Github/camada-next/src/index.ts`
-- Modify: `~/Github/camada-next/package.json` (version `0.1.0`)
-- Test: `~/Github/camada-next/test/challenge.test.ts`
+- Modify: `~/Github/camada-all/camada-next/src/engine.ts`
+- Create: `~/Github/camada-all/camada-next/src/challenge.ts`
+- Modify: `~/Github/camada-all/camada-next/src/middleware.ts`, `~/Github/camada-all/camada-next/src/route.ts`, `~/Github/camada-all/camada-next/src/index.ts`
+- Modify: `~/Github/camada-all/camada-next/package.json` (version `0.1.0`)
+- Test: `~/Github/camada-all/camada-next/test/challenge.test.ts`
 
 **Interfaces:**
 - Consumes: `createChallengeAsync`, `challengePage`, `challengeCookie`, `safeReturnTo`, `wantsHtml`, `parseFormBody`, `CHALLENGE_COOKIE` from `@camada/core`.
@@ -1646,7 +1646,7 @@ MSG
 
 - [ ] **Step 1: Write the failing test**
 
-Create `~/Github/camada-next/test/challenge.test.ts`, modelled on the existing `test/middleware.test.ts` (reuse its `configure({ env, fetchImpl })` setup and its snapshot-frame stub; copy `snap-v4.bin` / `snap-v4.meta.json` from `camada-core/test/fixtures/` into `camada-next/test/fixtures/`).
+Create `~/Github/camada-all/camada-next/test/challenge.test.ts`, modelled on the existing `test/middleware.test.ts` (reuse its `configure({ env, fetchImpl })` setup and its snapshot-frame stub; copy `snap-v4.bin` / `snap-v4.meta.json` from `camada-core/test/fixtures/` into `camada-next/test/fixtures/`).
 
 ```ts
 import { describe, it, expect, afterEach } from 'vitest';
@@ -1738,12 +1738,12 @@ describe('@camada/next challenge', () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd ~/Github/camada-next && npx vitest run test/challenge.test.ts`
+Run: `cd ~/Github/camada-all/camada-next && npx vitest run test/challenge.test.ts`
 Expected: FAIL — `../src/challenge` does not exist.
 
 - [ ] **Step 3: Engine — secret, challenge flag, snapshot version**
 
-In `~/Github/camada-next/src/engine.ts`:
+In `~/Github/camada-all/camada-next/src/engine.ts`:
 - add `secret: string;` to `ResolvedEnv` and `secret: env.CAMADA_KEY || \`${ingestToken}.${snapToken}\`,` to the returned object;
 - add to `ConfigureOptions`: `challenge?: boolean;` and `snapshotVersion?: 3 | 4;`
 - pass the snapshot version through: `new SnapshotClient({ url: env.snapshotUrl, token: env.snapToken, mode: 'lazy', sdk: SDK_ID, snapshotVersion: overrides.snapshotVersion ?? 4, ...injected })`
@@ -1847,7 +1847,7 @@ export async function challengeGate(req: Request): Promise<Response | null> {
 
 - [ ] **Step 5: Wire the middleware and the route**
 
-In `~/Github/camada-next/src/middleware.ts`:
+In `~/Github/camada-all/camada-next/src/middleware.ts`:
 - widen the signature: `export function camada(_options?: CamadaMiddlewareOptions): (req: NextRequest, event: NextFetchEvent) => Response | undefined | Promise<Response | undefined>` and the inner function's return type likewise;
 - import `{ challengeEnabled }` from `./engine` and `{ isChallengeRoute, challengePassed, serveChallenge }` from `./challenge`;
 - right after the `if (v.block) { … }` block, insert:
@@ -1862,7 +1862,7 @@ In `~/Github/camada-next/src/middleware.ts`:
       }
 ```
 
-In `~/Github/camada-next/src/route.ts`, inside the returned `POST`, before the `lastSegment(req) !== 'fp'` guard:
+In `~/Github/camada-all/camada-next/src/route.ts`, inside the returned `POST`, before the `lastSegment(req) !== 'fp'` guard:
 
 ```ts
       if (lastSegment(req) === 'challenge') {
@@ -1877,17 +1877,17 @@ In `~/Github/camada-next/src/route.ts`, inside the returned `POST`, before the `
 
 with `import { challengeEnabled } from './engine';` and `import { verifyChallenge } from './challenge';` added at the top.
 
-In `~/Github/camada-next/src/index.ts` add:
+In `~/Github/camada-all/camada-next/src/index.ts` add:
 
 ```ts
 export { challengeGate } from './challenge';
 ```
 
-Set `"version": "0.1.0"` in `~/Github/camada-next/package.json`.
+Set `"version": "0.1.0"` in `~/Github/camada-all/camada-next/package.json`.
 
 - [ ] **Step 6: Run the tests**
 
-Run: `cd ~/Github/camada-next && npm test && npm run check && npm run build`
+Run: `cd ~/Github/camada-all/camada-next && npm test && npm run check && npm run build`
 Expected: PASS, **including `test/edge-safety.test.ts`** — if it fails, something in the challenge import graph pulled in a `node:` module; find it and remove it.
 
 - [ ] **Step 7: Review and commit**
@@ -1895,7 +1895,7 @@ Expected: PASS, **including `test/edge-safety.test.ts`** — if it fails, someth
 Run agent `fable-simplifier` on the diff, then agent `fable-reviewer`; apply findings.
 
 ```bash
-cd ~/Github/camada-next
+cd ~/Github/camada-all/camada-next
 git add -A src test package.json
 git commit -m "$(cat <<'MSG'
 feat(next): challenge in the middleware, POST /api/camada/challenge, challengeGate (SDK-04)
@@ -1909,7 +1909,7 @@ MSG
 
 ### Task 6: `@camada/hono` — the new Workers package (SEC-07)
 
-**Files (all new, in `~/Github/camada-hono`):**
+**Files (all new, in `~/Github/camada-all/camada-hono`):**
 - Create: `package.json`, `tsconfig.json`, `tsup.config.ts`, `vitest.config.ts` (only if the sibling repos have one — otherwise vitest's defaults are enough), `.gitignore`, `LICENSE`, `README.md`
 - Create: `src/index.ts`, `src/camada.ts`, `src/env.ts`, `src/version.ts`
 - Test: `test/camada.test.ts`
@@ -1918,15 +1918,15 @@ MSG
 - Consumes: everything Tasks 1–3 produced from `@camada/core` (`SnapshotClient`, `EventQueue`, `buildWireEvent`, `resolveClientIp`, `parseKey`, `parseTrustedProxyEnv`, `guardedAsync`, `TAP_HONO`, the challenge kit).
 - Produces: `camada(options?: CamadaHonoOptions): MiddlewareHandler` and `resetCamada()` (test hook).
 
-**Copy the layout from `~/Github/camada-node`:** same `scripts` block (`build`/`dev`/`test`/`check`), same tsup config shape, same `files`, `exports`, `engines`, `type: module`, MIT `LICENSE` (copy the file verbatim), same `.gitignore` (`node_modules`, `dist`, `*.log`). Copy `.claude/agents/fable-*.md` in as well.
+**Copy the layout from `~/Github/camada-all/camada-node`:** same `scripts` block (`build`/`dev`/`test`/`check`), same tsup config shape, same `files`, `exports`, `engines`, `type: module`, MIT `LICENSE` (copy the file verbatim), same `.gitignore` (`node_modules`, `dist`, `*.log`). Copy `.claude/agents/fable-*.md` in as well.
 
 - [ ] **Step 1: Initialise the repo and the manifest**
 
 ```bash
-cd ~/Github/camada-hono
+cd ~/Github/camada-all/camada-hono
 git init -b main
-cp ~/Github/camada-node/LICENSE .
-mkdir -p .claude/agents && cp ~/Github/camada-backend/.claude/agents/fable-*.md .claude/agents/
+cp ~/Github/camada-all/camada-node/LICENSE .
+mkdir -p .claude/agents && cp ~/Github/camada-all/camada-backend/.claude/agents/fable-*.md .claude/agents/
 printf 'node_modules\ndist\n*.log\n' > .gitignore
 ```
 
@@ -1979,13 +1979,13 @@ import { defineConfig } from 'tsup';
 export default defineConfig({ entry: ['src/index.ts'], format: ['esm', 'cjs'], dts: true, sourcemap: true, clean: true, external: ['@camada/core', 'hono'] });
 ```
 
-`tsconfig.json` — copy `~/Github/camada-node/tsconfig.json` verbatim, then add `"resolveJsonModule": true` if it is not already set (`src/version.ts` needs it) and add `"types": ["@cloudflare/workers-types"]` if the node one pins `@types/node` only. Read the node file before copying; do not invent settings.
+`tsconfig.json` — copy `~/Github/camada-all/camada-node/tsconfig.json` verbatim, then add `"resolveJsonModule": true` if it is not already set (`src/version.ts` needs it) and add `"types": ["@cloudflare/workers-types"]` if the node one pins `@types/node` only. Read the node file before copying; do not invent settings.
 
 Then: `npm install`.
 
 - [ ] **Step 2: Write the failing test**
 
-Create `~/Github/camada-hono/test/camada.test.ts`:
+Create `~/Github/camada-all/camada-hono/test/camada.test.ts`:
 
 ```ts
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -2125,11 +2125,11 @@ describe('@camada/hono', () => {
 });
 ```
 
-Copy the fixtures: `mkdir -p ~/Github/camada-hono/test/fixtures && cp ~/Github/camada-core/test/fixtures/snap-v4.bin ~/Github/camada-core/test/fixtures/snap-v4.meta.json ~/Github/camada-hono/test/fixtures/`
+Copy the fixtures: `mkdir -p ~/Github/camada-all/camada-hono/test/fixtures && cp ~/Github/camada-all/camada-core/test/fixtures/snap-v4.bin ~/Github/camada-all/camada-core/test/fixtures/snap-v4.meta.json ~/Github/camada-all/camada-hono/test/fixtures/`
 
 - [ ] **Step 3: Run to verify it fails**
 
-Run: `cd ~/Github/camada-hono && npx vitest run`
+Run: `cd ~/Github/camada-all/camada-hono && npx vitest run`
 Expected: FAIL — `../src/index.js` does not exist.
 
 - [ ] **Step 4: Write `src/version.ts` and `src/env.ts`**
@@ -2393,12 +2393,12 @@ export { resolveEnv, type CamadaHonoOptions, type ResolvedEnv } from './env.js';
 
 - [ ] **Step 6: Run the tests**
 
-Run: `cd ~/Github/camada-hono && npm test && npm run check && npm run build`
+Run: `cd ~/Github/camada-all/camada-hono && npm test && npm run check && npm run build`
 Expected: PASS. If `c.executionCtx` throws in the test harness (Hono raises when there is no execution context), the `try/catch` in `waitUntil` already swallows it — do not remove it.
 
 - [ ] **Step 7: Write the README**
 
-`~/Github/camada-hono/README.md` — mirror `~/Github/camada-node/README.md`'s structure (install, two-line quickstart, options table, what it observes, kill switch, fail-open promise) and include the camada-backend mounting example that contracts §H asks for:
+`~/Github/camada-all/camada-hono/README.md` — mirror `~/Github/camada-all/camada-node/README.md`'s structure (install, two-line quickstart, options table, what it observes, kill switch, fail-open promise) and include the camada-backend mounting example that contracts §H asks for:
 
 ````md
 # @camada/hono
@@ -2468,7 +2468,7 @@ Every path runs inside camada's guard: a bug, a dead ingest or a corrupt snapsho
 Run agent `fable-simplifier` on the diff, then agent `fable-reviewer`; apply findings.
 
 ```bash
-cd ~/Github/camada-hono
+cd ~/Github/camada-all/camada-hono
 git add -A
 git commit -m "$(cat <<'MSG'
 feat: @camada/hono 0.1.0 — Workers middleware with block, challenge and waitUntil flushes (SEC-07)
@@ -2483,9 +2483,9 @@ MSG
 ### Task 7: examples — `/challenge-me` in both demos
 
 **Files:**
-- Modify: `~/Github/camada-node-example/server.js`, `~/Github/camada-node-example/README.md`
-- Create: `~/Github/camada-next-example/app/challenge-me/route.ts`
-- Modify: `~/Github/camada-next-example/README.md`
+- Modify: `~/Github/camada-all/camada-node-example/server.js`, `~/Github/camada-all/camada-node-example/README.md`
+- Create: `~/Github/camada-all/camada-next-example/app/challenge-me/route.ts`
+- Modify: `~/Github/camada-all/camada-next-example/README.md`
 
 **Interfaces:**
 - Consumes: `camada.serveChallenge(req, res)` (Task 4), `challengeGate(req)` (Task 5).
@@ -2494,16 +2494,16 @@ MSG
 - [ ] **Step 1: Refresh the linked builds**
 
 ```bash
-cd ~/Github/camada-core && npm run build
-cd ~/Github/camada-node && npm run build
-cd ~/Github/camada-next && npm run build
-cd ~/Github/camada-node-example && npm install
-cd ~/Github/camada-next-example && npm install
+cd ~/Github/camada-all/camada-core && npm run build
+cd ~/Github/camada-all/camada-node && npm run build
+cd ~/Github/camada-all/camada-next && npm run build
+cd ~/Github/camada-all/camada-node-example && npm install
+cd ~/Github/camada-all/camada-next-example && npm install
 ```
 
 - [ ] **Step 2: node example**
 
-In `~/Github/camada-node-example/server.js`, add before the 404 handler:
+In `~/Github/camada-all/camada-node-example/server.js`, add before the 404 handler:
 
 ```js
 // SDK-04 demo: force the challenge for this route, whatever the snapshot says. Once solved,
@@ -2522,7 +2522,7 @@ and add `/challenge-me` to the `<nav>` inside `page`:
 
 - [ ] **Step 3: next example**
 
-Create `~/Github/camada-next-example/app/challenge-me/route.ts`:
+Create `~/Github/camada-all/camada-next-example/app/challenge-me/route.ts`:
 
 ```ts
 // SDK-04 demo: force the challenge for this route, whatever the snapshot says. challengeGate
@@ -2542,7 +2542,7 @@ export async function GET(req: Request): Promise<Response> {
 - [ ] **Step 4: Verify by hand**
 
 ```bash
-cd ~/Github/camada-node-example && node server.js &        # :3000
+cd ~/Github/camada-all/camada-node-example && node server.js &        # :3000
 curl -s -D- -H 'accept: text/html' localhost:3000/challenge-me | head -20
 ```
 Expected: `HTTP/1.1 403`, `x-camada-challenge: 1`, body containing `Checking your browser` and a 32-hex `name="nonce"`.
@@ -2554,14 +2554,14 @@ Then in Chrome (or with the tester's browser): open `http://localhost:3000/chall
 Add a "Challenge (SDK-04)" section to both READMEs: what `/challenge-me` demonstrates, the `_cch` cookie, and that a real challenge comes from a snapshot v4 `challenge` entry.
 
 ```bash
-cd ~/Github/camada-node-example
+cd ~/Github/camada-all/camada-node-example
 git add -A && git commit -m "$(cat <<'MSG'
 feat(example): /challenge-me demonstrates the SDK-04 proof-of-work challenge
 
 Claude-Session: https://claude.ai/code/session_014GA5a631prhERB2zJ2by1n
 MSG
 )"
-cd ~/Github/camada-next-example
+cd ~/Github/camada-all/camada-next-example
 git add -A && git commit -m "$(cat <<'MSG'
 feat(example): /challenge-me demonstrates the SDK-04 proof-of-work challenge
 
@@ -2575,8 +2575,8 @@ MSG
 ### Task 8: bottom-up green, golden-fixture swap, end-to-end against a v4 snapshot
 
 **Files:**
-- Modify (only if the swap changes them): `~/Github/camada-core/test/fixtures/*`, `~/Github/camada-core/test/conformance.test.ts`
-- Modify: `/Users/gabe/Github/camada/docs/orchestration/status/sdk.md`
+- Modify (only if the swap changes them): `~/Github/camada-all/camada-core/test/fixtures/*`, `~/Github/camada-all/camada-core/test/conformance.test.ts`
+- Modify: `/Users/gabe/Github/camada-all/camada/docs/orchestration/status/sdk.md`
 
 **Interfaces:** none — this task proves the whole stack.
 
@@ -2592,24 +2592,24 @@ Expected: every repo green. `camada-browser` and `camada-react` are untouched; i
 - [ ] **Step 2: Prove the dist inlining survived (SDK-03 regression guard)**
 
 ```bash
-grep -c '@camada/node' ~/Github/camada-node/dist/index.js
-grep -c '@camada/next' ~/Github/camada-next/dist/index.js
-grep -c '@camada/hono' ~/Github/camada-hono/dist/index.js
+grep -c '@camada/node' ~/Github/camada-all/camada-node/dist/index.js
+grep -c '@camada/next' ~/Github/camada-all/camada-next/dist/index.js
+grep -c '@camada/hono' ~/Github/camada-all/camada-hono/dist/index.js
 ```
 Expected: each ≥ 1, and none of the dist bundles contains `require("../package.json")` or `readFileSync`.
 
 - [ ] **Step 3: Swap in edge-analyst's golden fixtures if they exist**
 
 ```bash
-ls ~/Github/camada/edge-analyst/fixtures/blk3/ 2>/dev/null
+ls ~/Github/camada-all/camada/edge-analyst/fixtures/blk3/ 2>/dev/null
 ```
 - **If the directory does not exist:** keep the local fixtures, and leave the two format assumptions from Task 1 recorded in status/sdk.md under "Interface changes". Skip to Step 4.
-- **If it does:** copy every file into `~/Github/camada-core/test/fixtures/blk3/`, point `test/conformance.test.ts` at edge-analyst's expected-match table (its own JSON) alongside the hand table, and run `npm test`. A failure means the format reading in Task 1 was wrong: fix `parse.ts`/`match.ts` to edge-analyst's bytes (it owns the format), never the fixtures. Re-run Tasks 4–6 test suites afterwards and copy the new `snap-v4.*` into `camada-node/test/fixtures`, `camada-next/test/fixtures` and `camada-hono/test/fixtures`.
+- **If it does:** copy every file into `~/Github/camada-all/camada-core/test/fixtures/blk3/`, point `test/conformance.test.ts` at edge-analyst's expected-match table (its own JSON) alongside the hand table, and run `npm test`. A failure means the format reading in Task 1 was wrong: fix `parse.ts`/`match.ts` to edge-analyst's bytes (it owns the format), never the fixtures. Re-run Tasks 4–6 test suites afterwards and copy the new `snap-v4.*` into `camada-node/test/fixtures`, `camada-next/test/fixtures` and `camada-hono/test/fixtures`.
 
 - [ ] **Step 4: End-to-end against a live v4 snapshot**
 
 ```bash
-cd ~/Github/camada/edge-analyst && npm run dev        # :8787, MOCK_AI=1 ADMIN_TOKEN=dev INTERNAL_TOKEN=dev-internal
+cd ~/Github/camada-all/camada/edge-analyst && npm run dev        # :8787, MOCK_AI=1 ADMIN_TOKEN=dev INTERNAL_TOKEN=dev-internal
 # in another shell, seed and confirm the tenant serves v4:
 curl -s -o /dev/null -D- -H 'authorization: Bearer snap-acme' -H 'x-camada-snapshot: 4' localhost:8787/snapshot
 ```
@@ -2618,7 +2618,7 @@ Expected: `200` (or `204` before a snapshot is published). If edge-analyst does 
 With a challenge entry published for the test IP, run the node example and check both halves:
 ```bash
 export CAMADA_KEY=tok-acme.snap-acme CAMADA_INGEST_URL=http://localhost:8787 CAMADA_SNAPSHOT_URL=http://localhost:8787/snapshot CAMADA_TRUSTED_PROXY=hops:1
-(cd ~/Github/camada-node-example && node server.js)
+(cd ~/Github/camada-all/camada-node-example && node server.js)
 curl -si -H 'accept: text/html' -H 'X-Forwarded-For: <challenged ip>' localhost:3000/  | head -5   # 403 + the page
 curl -si -H 'accept: application/json' -H 'X-Forwarded-For: <challenged ip>' localhost:3000/       # 403 {"error":"challenge_required"}
 ```
@@ -2626,7 +2626,7 @@ Then check the rows land: `GET http://localhost:8787/admin/events?tenant=acme&ki
 
 - [ ] **Step 5: Update status/sdk.md**
 
-Add a `## Phase C` block at the TOP of `/Users/gabe/Github/camada/docs/orchestration/status/sdk.md`, keeping every existing line below it. It must carry:
+Add a `## Phase C` block at the TOP of `/Users/gabe/Github/camada-all/camada/docs/orchestration/status/sdk.md`, keeping every existing line below it. It must carry:
 - **Done:** SDK-02, SDK-04, SEC-07 with the commit hashes per repo and the new versions (`@camada/core` 0.1.0, `@camada/node` 0.1.0, `@camada/next` 0.1.0, `@camada/hono` 0.1.0) — web needs those exact numbers for the RULES-08 wording.
 - **Interface changes (proposals for the orchestrator):**
   1. edge-analyst `src/capabilities.js` `TAP_CAPS` needs `'sdk-hono'`. Proposed value: `(IN_APP & ~CAP.BEACON) | CAP.GEO_ASN | CAP.TLS_FP` — Workers hand `request.cf` asn/country and `tlsClientExtensionsSha1`, workerd normalises header order, and @camada/hono does not serve the beacon. Until it lands, `sdk-hono` events fall back to the `proxy` mask, which over-credits the tap.
@@ -2639,7 +2639,7 @@ Add a `## Phase C` block at the TOP of `/Users/gabe/Github/camada/docs/orchestra
 - [ ] **Step 6: Commit the plan's completion state**
 
 ```bash
-cd ~/Github/camada-core
+cd ~/Github/camada-all/camada-core
 git add -A docs
 git commit -m "$(cat <<'MSG'
 docs(plan): SDK phase C plan and its execution notes

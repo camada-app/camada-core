@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, tsup, vitest, esbuild (edge-safety bundle).
 
-**Spec:** /Users/gabe/Github/camada/docs/orchestration/contracts.md §D; /Users/gabe/Github/camada/docs/superpowers/specs/2026-09-02-saas-requirements.md SDK-01, SDK-03.
+**Spec:** /Users/gabe/Github/camada-all/camada/docs/orchestration/contracts.md §D; /Users/gabe/Github/camada-all/camada/docs/superpowers/specs/2026-09-02-saas-requirements.md SDK-01, SDK-03.
 
 ## Global Constraints
 
@@ -215,8 +215,8 @@ export function buildEvent(req: Request, path: string, ip: string | null, rid: s
 ### Task 4: full bottom-up build, examples smoke against edge-analyst dev, status + e2e proposal
 
 **Files:**
-- Modify: `/Users/gabe/Github/camada/docs/orchestration/status/sdk.md`
+- Modify: `/Users/gabe/Github/camada-all/camada/docs/orchestration/status/sdk.md`
 
-- [ ] **Step 1:** `for r in core browser react node next; do (cd ~/Github/camada-$r && npm run build && npm test && npm run check); done`; `(cd ~/Github/camada-node-example && npm install)`; `(cd ~/Github/camada-next-example && npm install)`.
-- [ ] **Step 2:** Start edge-analyst dev (`cd ~/Github/camada/edge-analyst && npm run dev`, then `npm run seed`), start node example with `CAMADA_KEY=tok-acme.snap-acme CAMADA_INGEST_URL=http://localhost:8787 CAMADA_TRUSTED_PROXY=hops:1`, curl `/` with `X-Forwarded-For: 203.0.113.66`, wait 16 s, `GET /admin/events?tenant=acme&kind=events&minutes=5` (`authorization: Bearer dev`). Look for `st: 403`. `blk` visible only once stream ea's ingest keeps it (EA-10) — note in status either way. Repeat for next example on :3001.
+- [ ] **Step 1:** `for r in core browser react node next; do (cd ~/Github/camada-all/camada-$r && npm run build && npm test && npm run check); done`; `(cd ~/Github/camada-all/camada-node-example && npm install)`; `(cd ~/Github/camada-all/camada-next-example && npm install)`.
+- [ ] **Step 2:** Start edge-analyst dev (`cd ~/Github/camada-all/camada/edge-analyst && npm run dev`, then `npm run seed`), start node example with `CAMADA_KEY=tok-acme.snap-acme CAMADA_INGEST_URL=http://localhost:8787 CAMADA_TRUSTED_PROXY=hops:1`, curl `/` with `X-Forwarded-For: 203.0.113.66`, wait 16 s, `GET /admin/events?tenant=acme&kind=events&minutes=5` (`authorization: Bearer dev`). Look for `st: 403`. `blk` visible only once stream ea's ingest keeps it (EA-10) — note in status either way. Repeat for next example on :3001.
 - [ ] **Step 3:** Status file with Done/In progress/Blocked/Interface changes (e2e-sdk.mjs diff proposal + `x-camada-sdk` sample)/Runnable (build order + commands). End with "available".
