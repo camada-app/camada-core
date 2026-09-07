@@ -3,12 +3,14 @@
 // scratch arrays of the original are instance fields here (safe under worker_threads and
 // interleaved matchers); matching stays fully synchronous.
 //
-// Outcome order is contract (contracts §D2, fixtures pin it): allow -> block -> challenge.
+// Outcome order is contract (contracts §D3, fixtures pin it): the tenant's ordered custom rules
+// first (first match wins, the order IS the precedence), then allow -> block -> challenge.
 // Within each side the axis order is ip4 -> ip6 -> asn -> country -> tls -> path.
-// At the SDK position only ip and path are usually known; asn/country/tlsx entries then simply
-// never match — that is the documented, honest enforcement scope (fail open, never guess).
+// At the SDK position only ip, path, ua and the request headers are usually known;
+// asn/country/tlsx entries and conditions then simply never match — that is the documented,
+// honest enforcement scope (fail open, never guess).
 
-import type { Snapshot, RangeSet } from './parse.js';
+import { inRange4, type Snapshot, type RangeSet, type RuleAction, type RuleRequest, type CompiledRule } from './parse.js';
 import { parseIp4, parseIp6Into } from './ipparse.js';
 
 export interface MatchInput {
@@ -17,16 +19,21 @@ export interface MatchInput {
   country?: string | null;
   tlsx?: string | null;
   path?: string | null;
+  ua?: string | null;             // v5 rules read it; the three sides never do
+  header?: (name: string) => string | null;   // v5 header conditions read it, always with a lower-cased name; the three sides never do
 }
 
-export type MatchReason = 'ip4' | 'ip6' | 'asn' | 'country' | 'tls' | 'path';
+export type MatchReason = 'ip4' | 'ip6' | 'asn' | 'country' | 'tls' | 'path' | 'rule';
 /** The name this had before v4 gave allow and challenge the same axes. */
 export type BlockReason = MatchReason;
 
 export interface MatchResult {
   block: boolean;
   challenge: boolean;
-  allowed: boolean;
+  allowed: boolean;               // true for skip (which absorbed the old allow) and for the allow side
+  warn: boolean;
+  action: RuleAction | null;      // the action of the rule that decided, null when a side did
+  rule?: string;                  // the rule id, present only when reason is 'rule'
   reason?: MatchReason;
   version?: string;
 }
@@ -37,14 +44,6 @@ const cleanPath = (raw: string | null | undefined): string => {
   return q === -1 ? p : p.slice(0, q);
 };
 
-/** Binary search over interleaved [start, end] uint32 pairs sorted by start. */
-function inRange4(r: Uint32Array, n: number): boolean {
-  let lo = 0, hi = (r.length >>> 1) - 1;
-  if (hi < 0) return false;
-  while (lo < hi) { const m = (lo + hi + 1) >>> 1; if (r[m * 2] <= n) lo = m; else hi = m - 1; }
-  return r[lo * 2] <= n && n <= r[lo * 2 + 1];
-}
-
 /** Walks every '/'-terminated ancestor of `path`, the way the block side does. */
 function prefixHit(prefixes: Set<string>, path: string): boolean {
   let i = path.indexOf('/', 1);
@@ -52,9 +51,31 @@ function prefixHit(prefixes: Set<string>, path: string): boolean {
   return false;
 }
 
+/** A side decided (or nothing did): no rule, so `action` is null and `rule` absent. */
+const NONE = { block: false, challenge: false, allowed: false, warn: false, action: null } as const;
+
+/** A rule decided this request (§D3): at most one of allowed / block / challenge / warn is true,
+ *  `reason` is 'rule', and `rule` names the id the adapters stamp on the event and the
+ *  x-block-rule header. */
+function ruleResult(rule: CompiledRule, version: string): MatchResult {
+  return {
+    block: rule.action === 'block',
+    challenge: rule.action === 'challenge',
+    allowed: rule.action === 'skip',
+    warn: rule.action === 'warn',
+    action: rule.action, rule: rule.id, reason: 'rule', version,
+  };
+}
+
 export class Matcher {
   private readonly W = new Uint32Array(4);
   private readonly G = new Uint16Array(8);
+  // The rule request is scratch too: filled per match(), read only inside the rule loop. `in6`
+  // hands the predicates the v6 search over W, so nothing about the address leaves this instance.
+  private readonly R: RuleRequest = {
+    n4: -1, has6: false, asn: null, country: null, tlsx: null, path: '/', ua: null, header: null,
+    in6: (pairs, n) => this.inRange6(pairs, n),
+  };
   constructor(readonly snap: Snapshot) {}
 
   private blocked4(n: number): boolean {
@@ -147,12 +168,23 @@ export class Matcher {
       if (ip.indexOf(':') === -1) n4 = parseIp4(ip);
       else has6 = parseIp6Into(ip, this.W, this.G);
     }
+    if (S.rules.length) {
+      const r = this.R;
+      r.n4 = n4; r.has6 = has6;
+      r.asn = input.asn ?? null; r.country = input.country ?? null; r.tlsx = input.tlsx ?? null;
+      r.path = cleanPath(input.path); r.ua = input.ua ?? null; r.header = input.header ?? null;
+      for (const rule of S.rules) {              // the order IS the precedence (§A4): first match wins
+        let hit = true;
+        for (const cond of rule.conds) if (!cond(r)) { hit = false; break; }   // a plain loop: every() would allocate a closure per rule
+        if (hit) return ruleResult(rule, S.version);
+      }
+    }
     const allowed = this.side(S.allow, input, n4, has6);
-    if (allowed) return { block: false, challenge: false, allowed: true, reason: allowed, version: S.version };
+    if (allowed) return { ...NONE, allowed: true, reason: allowed, version: S.version };
     const blocked = this.blockSide(input, n4, has6);
-    if (blocked) return { block: true, challenge: false, allowed: false, reason: blocked, version: S.version };
+    if (blocked) return { ...NONE, block: true, reason: blocked, version: S.version };
     const chal = this.side(S.challenge, input, n4, has6);
-    if (chal) return { block: false, challenge: true, allowed: false, reason: chal, version: S.version };
-    return { block: false, challenge: false, allowed: false, version: S.version };
+    if (chal) return { ...NONE, challenge: true, reason: chal, version: S.version };
+    return { ...NONE, version: S.version };
   }
 }

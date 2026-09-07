@@ -1,0 +1,1456 @@
+{
+  "v5": {
+    "rules": [
+      {
+        "input": {
+          "ip": "203.0.113.66"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "203.0.113.67"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "198.51.100.7"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "builtin:block"
+        }
+      },
+      {
+        "input": {
+          "ip": "10.0.0.0"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "10.255.255.255"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "9.255.255.255"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "11.0.0.0"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "198.51.100.0"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "198.51.100.255"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "198.51.101.0"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "192.0.2.5"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "192.0.2.4"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "192.0.2.6"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "0.0.0.0"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "255.255.255.255"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db8::1"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip6",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db8::2"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:0db8:0000:0000:0000:0000:0000:0001"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip6",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db8:dead::"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip6",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db8:dead:ffff:ffff:ffff:ffff:ffff"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip6",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db8:deae::1"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "::1"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "asn": 14061
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "asn": 14062
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "asn": 4200000123
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "asn",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "asn": 4200000124
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "country": "RU"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "country": "US"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "tlsx": "9f0a77c2"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "tls",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "tlsx": "deadbeef"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "path",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path/child"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/anything"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "path",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/api/v2/dump"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "cr_00000000000c"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/api/vx/dump"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path?q=1"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "path",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "203.0.113.66",
+          "path": "/blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "not-an-ip"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "203.0.113"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db8::1%eth0"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "::ffff:203.0.113.66"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "10.0.0.7"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "10.1.2.3"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "10.2.0.1"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db8:dead::9"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db8:dead::a"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip6",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/allowed"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/public/x"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/other"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "path",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "192.0.2.20"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "203.0.114.55"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db9:beef::1"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip6",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db9:c0de::5"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip6",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "asn": 64512
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "asn",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "country": "CN"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "country",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/checkout"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "path",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/admin/users"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "path",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/admin"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "203.0.113.66",
+          "path": "/admin/users"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/healthz"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "cr_00000000000a"
+        }
+      },
+      {
+        "input": {
+          "ip": "203.0.113.66",
+          "path": "/healthz"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "cr_00000000000a"
+        }
+      },
+      {
+        "input": {
+          "ip": "192.0.2.130"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "cr_00000000000b"
+        }
+      },
+      {
+        "input": {
+          "ip": "192.0.2.127"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db8:cafe::5"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "cr_00000000000b"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/api/v2/dump"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "cr_00000000000c"
+        }
+      },
+      {
+        "input": {
+          "ip": "10.1.2.3",
+          "path": "/api/v2/dump"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "100.64.1.1"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "cr_000000000014"
+        }
+      },
+      {
+        "input": {
+          "ip": "100.64.7.9"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "2001:db8:beef::1"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "cr_000000000014"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/checkout",
+          "country": "DE"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": "challenge",
+          "reason": "rule",
+          "rule": "cr_00000000000d"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/checkout/cart",
+          "country": "DE"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": "challenge",
+          "reason": "rule",
+          "rule": "cr_00000000000d"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/checkout",
+          "country": "US"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "path",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "ua": "Scrapy/2.11 (+https://scrapy.org)"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": true,
+          "action": "warn",
+          "reason": "rule",
+          "rule": "cr_00000000000e"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "ua": "python-requests/2.32.0"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": true,
+          "action": "warn",
+          "reason": "rule",
+          "rule": "cr_00000000000e"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "ua": "curl/8.4.0"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "cr_00000000000f"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "ua": "Mozilla/5.0"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "asn": 64500,
+          "country": "FR"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "cr_000000000010"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "asn": 64500,
+          "country": "DE"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "country": "PL"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "country": "NO"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "198.51.100.7"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "builtin:block"
+        }
+      },
+      {
+        "input": {
+          "ip": "203.0.115.9"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "builtin:block"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/wp-admin/users"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "builtin:block"
+        }
+      },
+      {
+        "input": {
+          "ip": "10.0.0.7"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "country": "RU"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "203.0.113.66",
+          "ua": "Mozilla/5.0 (X11; Linux x86_64)"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": "ip4",
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "headers": {
+            "x-api-key": "leaked-key-1"
+          }
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "cr_000000000019"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "headers": {
+            "x-api-key": "a-good-key"
+          }
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "headers": {
+            "x-other": "leaked-key-1"
+          }
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "headers": {
+            "via": "1.1 squid-proxy (squid/6.6)"
+          }
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": true,
+          "action": "warn",
+          "reason": "rule",
+          "rule": "cr_00000000001a"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "headers": {
+            "x-app-version": "1.2.9"
+          }
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "warn": false,
+          "action": "challenge",
+          "reason": "rule",
+          "rule": "cr_00000000001b"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "headers": {
+            "x-app-version": "2.0.0"
+          }
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "203.0.113.66",
+          "headers": {
+            "x-camada-probe": "allow-me"
+          }
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "warn": false,
+          "action": "skip",
+          "reason": "rule",
+          "rule": "builtin:allow"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "headers": {
+            "x-bad-client": "blocked-agent"
+          }
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "builtin:block"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "headers": {
+            "x-bad-client": "friendly-agent"
+          }
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      }
+    ],
+    "empty": [
+      {
+        "input": {
+          "ip": "203.0.113.66"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      }
+    ]
+  }
+}

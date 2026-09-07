@@ -7,4 +7,10 @@ export const TAP_HONO = 'sdk-hono';
 export type Tap = typeof TAP_NODE | typeof TAP_NEXT | typeof TAP_HONO;
 
 export const DEFAULT_REFRESH_MS = 30_000;
+
+/** Snapshot containers this SDK family can read (§D3). 5 carries the tenant's ordered custom
+ *  rules on top of v4's allow/challenge sides; a tenant without one is answered with the next
+ *  container down, so asking for 5 is always safe. */
+export type SnapshotVersion = 3 | 4 | 5;
+export const DEFAULT_SNAPSHOT_VERSION: SnapshotVersion = 5;
 export const KILL_SWITCH_ENV = 'CAMADA_DISABLED';
