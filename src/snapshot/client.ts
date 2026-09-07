@@ -6,20 +6,26 @@
 // Semantics ported exactly: single-in-flight load; loadedAt stamped even on 204 (retry per
 // poll cadence, not per request); any error keeps the previous snapshot; cold = fail open.
 
-import { parseSnapshot, type SnapshotMeta } from './parse.js';
+import { parseSnapshot, type SnapshotMeta, type RuleAction } from './parse.js';
 import { Matcher, type MatchInput, type MatchReason } from './match.js';
 import type { CamadaRemoteConfig } from '../config.js';
 import { logRateLimited } from '../guarded.js';
-import { DEFAULT_REFRESH_MS } from '../constants.js';
+import { DEFAULT_REFRESH_MS, DEFAULT_SNAPSHOT_VERSION, type SnapshotVersion } from '../constants.js';
 
 /** Like MatchResult, plus 'cold' for "never loaded yet" (fail open, mirrors the collector). */
 export interface Verdict {
   block: boolean;
   challenge: boolean;
   allowed: boolean;
+  warn: boolean;
+  action: RuleAction | null;
+  rule?: string;
   reason?: MatchReason | 'cold';
   version?: string;
 }
+
+/** Nothing matched (and nothing could): every flag down, and the adapters pass the request. */
+const NONE = { block: false, challenge: false, allowed: false, warn: false, action: null } as const;
 
 export interface SnapshotClientOptions {
   url: string;                    // e.g. https://analyst.example.com/snapshot
@@ -29,7 +35,7 @@ export interface SnapshotClientOptions {
   mode?: 'timer' | 'lazy';        // timer: unref'd interval (long-lived Node); lazy: ensureFresh() per request (serverless/edge)
   fetchImpl?: typeof fetch;
   sdk?: string;                   // '<package>/<version>': sent as x-camada-sdk on every poll (SDK-03)
-  snapshotVersion?: 3 | 4;        // 4 (default) asks for the v4 allow/challenge sections; 3 opts out
+  snapshotVersion?: SnapshotVersion;   // 5 (default) asks for the custom rules too; 4 for the allow/challenge sections only; 3 opts out of both
 }
 
 // See the note in events/queue.ts: the bare global must never be stored, because calling it as
@@ -50,7 +56,7 @@ export class SnapshotClient {
   constructor(opts: SnapshotClientOptions) {
     const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as SnapshotClientOptions;   // adapters forward optional options verbatim; undefined must not clobber a default
     this.opts = {
-      refreshMs: DEFAULT_REFRESH_MS, fetchTimeoutMs: 3_000, mode: 'timer', snapshotVersion: 4,
+      refreshMs: DEFAULT_REFRESH_MS, fetchTimeoutMs: 3_000, mode: 'timer', snapshotVersion: DEFAULT_SNAPSHOT_VERSION,
       fetchImpl: defaultFetch,
       ...given,
     };
@@ -87,7 +93,7 @@ export class SnapshotClient {
     const headers: Record<string, string> = { authorization: `Bearer ${this.opts.token}` };
     if (this.etag) headers['if-none-match'] = this.etag;
     if (this.opts.sdk) headers['x-camada-sdk'] = this.opts.sdk;
-    if (this.opts.snapshotVersion === 4) headers['x-camada-snapshot'] = '4';
+    if (this.opts.snapshotVersion > 3) headers['x-camada-snapshot'] = String(this.opts.snapshotVersion);   // a tenant without that container is answered with the next one down
     const get = this.opts.fetchImpl;   // a local, so the call has no receiver even if a caller handed us a bare global
     const res = await get(this.opts.url, { headers, signal: AbortSignal.timeout(this.opts.fetchTimeoutMs) });
     if (res.status !== 200 && res.status !== 204 && res.status !== 304) return;   // 401/5xx: keep what we have
@@ -102,9 +108,9 @@ export class SnapshotClient {
     const metaLen = new DataView(frame.buffer, frame.byteOffset).getUint32(0, true);
     if (4 + metaLen > frame.byteLength) throw new Error('camada: truncated snapshot frame');
     const meta = JSON.parse(new TextDecoder().decode(frame.subarray(4, 4 + metaLen))) as SnapshotMeta;
-    // The server ships the v3 and v4 bodies of one publish under the SAME meta.version and
-    // different etags ("<v>" vs "<v>-v4"), so version alone cannot say "nothing changed":
-    // a tenant that gains a v4 snapshot would otherwise keep the v3 matcher forever.
+    // The server ships the v3, v4 and v5 bodies of one publish under the SAME meta.version and
+    // different etags ("<v>" vs "<v>-v4" vs "<v>-v5"), so version alone cannot say "nothing
+    // changed": a tenant that gains a v5 snapshot would otherwise keep the v4 matcher forever.
     const etag = res.headers.get('etag');
     if (this.matcher && meta.version === this.matcher.snap.version && etag !== null && etag === this.etag) return;
     this.matcher = new Matcher(parseSnapshot(frame.subarray(4 + metaLen), meta));   // throws on corrupt data -> caught above, previous kept
@@ -124,8 +130,8 @@ export class SnapshotClient {
 
   /** Cold (never loaded) and no-snapshot both fail open, mirroring the edge collector. */
   verdict(input: MatchInput): Verdict {
-    if (!this.loadedAt) return { block: false, challenge: false, allowed: false, reason: 'cold' };
-    if (!this.matcher) return { block: false, challenge: false, allowed: false };
+    if (!this.loadedAt) return { ...NONE, reason: 'cold' };
+    if (!this.matcher) return { ...NONE };
     return this.matcher.match(input);
   }
 }

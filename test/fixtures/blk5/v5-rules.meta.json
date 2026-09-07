@@ -1,0 +1,300 @@
+{
+  "version": "fixture-v5-rules",
+  "country": [
+    "RU"
+  ],
+  "tls": [
+    "9f0a77c2"
+  ],
+  "pathsExact": [
+    "/blocked-path"
+  ],
+  "pathsPrefix": [
+    "/locked/"
+  ],
+  "pathsRegex": [
+    "^/api/v[0-9]+/dump$"
+  ],
+  "allow": {
+    "asn": [
+      14061
+    ],
+    "country": [
+      "RU"
+    ],
+    "pathsExact": [
+      "/locked/allowed"
+    ],
+    "pathsPrefix": [
+      "/locked/public/"
+    ]
+  },
+  "challenge": {
+    "asn": [
+      64512
+    ],
+    "country": [
+      "CN"
+    ],
+    "pathsExact": [
+      "/checkout"
+    ],
+    "pathsPrefix": [
+      "/admin/"
+    ]
+  },
+  "rules": [
+    {
+      "id": "cr_00000000000a",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "path",
+          "op": "is",
+          "v": "/healthz"
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "ip",
+          "op": "is_in",
+          "set": true
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "asn",
+          "op": "is_in",
+          "v": [
+            "14061"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "country",
+          "op": "is_in",
+          "v": [
+            "RU"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "path",
+          "op": "is",
+          "v": "/locked/allowed"
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "path",
+          "op": "starts_with",
+          "v": "/locked/public/"
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "header",
+          "op": "is",
+          "name": "x-camada-probe",
+          "v": "allow-me"
+        }
+      ]
+    },
+    {
+      "id": "builtin:block",
+      "action": "block",
+      "conds": [
+        {
+          "f": "ip",
+          "op": "is_in",
+          "set": true
+        }
+      ]
+    },
+    {
+      "id": "builtin:block",
+      "action": "block",
+      "conds": [
+        {
+          "f": "path",
+          "op": "starts_with",
+          "v": "/wp-admin/"
+        }
+      ]
+    },
+    {
+      "id": "builtin:block",
+      "action": "block",
+      "conds": [
+        {
+          "f": "header",
+          "op": "is",
+          "name": "x-bad-client",
+          "v": "blocked-agent"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000000b",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "ip",
+          "op": "is_in",
+          "set": true
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000000c",
+      "action": "block",
+      "conds": [
+        {
+          "f": "path",
+          "op": "matches",
+          "v": "^/api/v[0-9]+/dump$"
+        },
+        {
+          "f": "ip",
+          "op": "not_in",
+          "set": true
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000014",
+      "action": "block",
+      "conds": [
+        {
+          "f": "ip",
+          "op": "is_in",
+          "set": true
+        },
+        {
+          "f": "ip",
+          "op": "not_in",
+          "set": true
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000000d",
+      "action": "challenge",
+      "conds": [
+        {
+          "f": "path",
+          "op": "starts_with",
+          "v": "/checkout"
+        },
+        {
+          "f": "country",
+          "op": "is_not",
+          "v": "US"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000000e",
+      "action": "warn",
+      "conds": [
+        {
+          "f": "ua",
+          "op": "matches",
+          "v": "(Scrapy|python-requests)/[0-9]"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000000f",
+      "action": "block",
+      "conds": [
+        {
+          "f": "ua",
+          "op": "contains",
+          "v": "curl/"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000019",
+      "action": "block",
+      "conds": [
+        {
+          "f": "header",
+          "op": "is",
+          "name": "x-api-key",
+          "v": "leaked-key-1"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000001a",
+      "action": "warn",
+      "conds": [
+        {
+          "f": "header",
+          "op": "contains",
+          "name": "via",
+          "v": "squid"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000001b",
+      "action": "challenge",
+      "conds": [
+        {
+          "f": "header",
+          "op": "matches",
+          "name": "x-app-version",
+          "v": "^1\\.[0-2]\\."
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000010",
+      "action": "block",
+      "conds": [
+        {
+          "f": "asn",
+          "op": "is_in",
+          "v": [
+            "64500",
+            "64501"
+          ]
+        },
+        {
+          "f": "country",
+          "op": "is_not",
+          "v": "DE"
+        }
+      ]
+    }
+  ]
+}

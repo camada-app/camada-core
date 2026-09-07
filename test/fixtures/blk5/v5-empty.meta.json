@@ -1,0 +1,21 @@
+{
+  "version": "fixture-v5-empty",
+  "country": [],
+  "tls": [],
+  "pathsExact": [],
+  "pathsPrefix": [],
+  "pathsRegex": [],
+  "allow": {
+    "asn": [],
+    "country": [],
+    "pathsExact": [],
+    "pathsPrefix": []
+  },
+  "challenge": {
+    "asn": [],
+    "country": [],
+    "pathsExact": [],
+    "pathsPrefix": []
+  },
+  "rules": []
+}

@@ -7,18 +7,31 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parseSnapshot, Matcher, HDRS, buildWireEvent, type MatchInput, type MatchResult } from '../src/index.js';
 
-const fx = (f: string) => new URL(`./fixtures/blk3/${f}`, import.meta.url);
-const bin = (f: string) => { const b = readFileSync(fx(f)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
+const at = (dir: string) => (f: string) => new URL(`./fixtures/${dir}/${f}`, import.meta.url);
+const fx = at('blk3'), fx5 = at('blk5');
+const read = (u: URL) => { const b = readFileSync(u); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
+const bin = (f: string) => read(fx(f));
 const json = (f: string) => JSON.parse(readFileSync(fx(f), 'utf8'));
+const json5 = (f: string) => JSON.parse(readFileSync(fx5(f), 'utf8'));
 
 interface Expect { block: boolean; challenge: boolean; allowed: boolean; reason: string | null }
+/** v5 adds the rule half of the outcome (§D3). */
+interface Expect5 extends Expect { warn: boolean; action: string | null; rule: string | null }
 interface Case { input: MatchInput; expect: Expect }
+/** A v5 case's `headers` is a map with already lower-cased keys — the request as the tap sees
+ *  it, not a MatchInput field. `input5()` turns it into the `header(name)` getter §D3 defines,
+ *  the same wrapper edge-analyst's scripts/fixture-sources.mjs uses for the reference run. */
+interface Case5 { input: MatchInput & { headers?: Record<string, string> }; expect: Expect5 }
+const input5 = (c: Case5): MatchInput => ({ ...c.input, header: (n) => c.input.headers?.[n] ?? null });
 const cases = json('cases.json') as Record<'v3' | 'v4', Record<'basic' | 'empty', Case[]>>;
+const cases5 = (json5('cases.json') as { v5: Record<'rules' | 'empty', Case5[]> }).v5;
 const hdrs = json('hdrs.json') as { hdrs: string[]; cases: Array<{ names: string[]; hm: number }> };
 
 const matcher = (name: string) => new Matcher(parseSnapshot(bin(`${name}.bin`), json(`${name}.meta.json`)));
+const matcher5 = (name: string) => new Matcher(parseSnapshot(read(fx5(`${name}.bin`)), json5(`${name}.meta.json`)));
 // The reference reports "nothing matched" as reason null; the port leaves it undefined.
 const outcome = (r: MatchResult): Expect => ({ block: r.block, challenge: r.challenge, allowed: r.allowed, reason: r.reason ?? null });
+const outcome5 = (r: MatchResult): Expect5 => ({ ...outcome(r), warn: r.warn, action: r.action ?? null, rule: r.rule ?? null });
 
 describe.each(['v3', 'v4'] as const)('snapshot matcher conformance (%s)', (version) => {
   const basic = matcher(`${version}-basic`);
@@ -49,6 +62,61 @@ describe('v4 outcomes', () => {
     const diverged = pairs.filter(([v4c, v3c]) => JSON.stringify(v4c.expect) !== JSON.stringify(v3c.expect));
     expect(diverged.length).toBeGreaterThan(0);   // the fixtures must actually exercise the new sections
     for (const [v4c, v3c] of diverged) expect(outcome(v3.match(v4c.input))).toEqual(v3c.expect);
+  });
+});
+
+describe('snapshot matcher conformance (v5)', () => {
+  const rules = matcher5('v5-rules');
+  const empty = matcher5('v5-empty');
+
+  it.each(cases5.rules.map((c) => [JSON.stringify(c.input), c] as const))('rules %s', (_label, c) => {
+    expect(outcome5(rules.match(input5(c)))).toEqual(c.expect);
+  });
+
+  it.each(cases5.empty.map((c) => [JSON.stringify(c.input), c] as const))('empty %s', (_label, c) => {
+    expect(outcome5(empty.match(input5(c)))).toEqual(c.expect);
+  });
+});
+
+describe('v5 outcomes', () => {
+  const rules = matcher5('v5-rules');
+
+  it('never sets two outcome flags at once', () => {
+    for (const c of [...cases5.rules, ...cases5.empty]) {
+      const r = rules.match(input5(c));
+      expect(Number(r.allowed) + Number(r.block) + Number(r.challenge) + Number(r.warn)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('names the rule, and only the rule, when a rule decided', () => {
+    for (const c of cases5.rules) {
+      const r = rules.match(input5(c));
+      if (r.reason === 'rule') { expect(r.rule).toBeTruthy(); expect(r.action).toBeTruthy(); }
+      else { expect(r.rule).toBeUndefined(); expect(r.action).toBeNull(); }
+    }
+  });
+
+  it('lets the rules overrule the sides the v4 container can only read', () => {
+    const v4 = matcher('v4-basic');
+    // the rule table has to actually change outcomes, or the fixtures prove nothing
+    const diverged = cases5.rules.filter((c) => JSON.stringify(outcome(v4.match(input5(c)))) !== JSON.stringify(outcome(rules.match(input5(c)))));
+    expect(diverged.length).toBeGreaterThan(0);
+    for (const c of diverged) expect(c.expect.reason).toBe('rule');
+  });
+
+  // The header cases are the only ones a v4 container could never express at all: the getter is
+  // what carries them, so a harness that quietly dropped `input.headers` would still pass every
+  // other row above.
+  it('decides the header cases through the getter alone', () => {
+    const headerCases = cases5.rules.filter((c) => c.input.headers);
+    expect(headerCases.length).toBeGreaterThan(0);
+    for (const c of headerCases) {
+      expect(outcome5(rules.match(input5(c)))).toEqual(c.expect);
+      // same case with no getter: a header condition can then never fire (fail open)
+      const blind = rules.match({ ...c.input, header: undefined });
+      if (c.expect.reason === 'rule') expect(blind.rule).not.toBe(c.expect.rule);
+      else expect(blind.reason ?? null).toBe(c.expect.reason);
+    }
   });
 });
 

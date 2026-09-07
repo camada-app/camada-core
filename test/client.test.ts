@@ -29,7 +29,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10));
 describe('SnapshotClient', () => {
   it('is cold (fail open) before the first load completes', () => {
     const c = client(() => new Promise(() => {}));   // never resolves
-    expect(c.verdict({ ip: '203.0.113.66' })).toEqual({ block: false, challenge: false, allowed: false, reason: 'cold' });
+    expect(c.verdict({ ip: '203.0.113.66' })).toEqual({ block: false, challenge: false, allowed: false, warn: false, action: null, reason: 'cold' });
   });
 
   it('loads on 200, matches, and exposes the config', async () => {
@@ -96,7 +96,7 @@ describe('SnapshotClient', () => {
     const c = client(async () => (++calls === 1 ? ok200() : new Response(null, { status: 204, headers: { 'x-camada-config': CONFIG } })));
     c.ensureFresh(); await settle();
     c.ensureFresh(); await settle();
-    expect(c.verdict({ ip: '203.0.113.66' })).toEqual({ block: false, challenge: false, allowed: false });
+    expect(c.verdict({ ip: '203.0.113.66' })).toEqual({ block: false, challenge: false, allowed: false, warn: false, action: null });
   });
 
   it('runs a single load at a time', async () => {
@@ -178,7 +178,7 @@ describe('SnapshotClient', () => {
 });
 
 describe('snapshotVersion', () => {
-  const header = async (opts: { snapshotVersion?: 3 | 4 } = {}) => {
+  const header = async (opts: { snapshotVersion?: 3 | 4 | 5 } = {}) => {
     let seen: string | null = 'unset';
     const c = new SnapshotClient({
       url: 'https://a.test/snapshot', token: 'st', mode: 'lazy', refreshMs: 0,
@@ -190,12 +190,56 @@ describe('snapshotVersion', () => {
     return seen;
   };
 
-  it('asks for v4 by default', async () => {
-    expect(await header()).toBe('4');
+  it('asks for v5 by default', async () => {
+    expect(await header()).toBe('5');
+  });
+
+  it('asks for the version it was pinned to', async () => {
+    expect(await header({ snapshotVersion: 4 })).toBe('4');
   });
 
   it('omits the header when pinned to 3', async () => {
     expect(await header({ snapshotVersion: 3 })).toBeNull();
+  });
+});
+
+describe('v5 snapshot', () => {
+  const bin5 = readFileSync(new URL('./fixtures/blk5/v5-rules.bin', import.meta.url));
+  const meta5 = JSON.stringify(JSON.parse(readFileSync(new URL('./fixtures/blk5/v5-rules.meta.json', import.meta.url), 'utf8')));
+  const ok5 = () => new Response(frame(meta5, new Uint8Array(bin5)), {
+    status: 200, headers: { etag: `"${JSON.parse(meta5).version}-v5"`, 'x-camada-config': CONFIG },
+  });
+
+  it('carries the rule verdict through to the adapters', async () => {
+    const c = client(async () => ok5());
+    c.ensureFresh();
+    await settle();
+    expect(c.verdict({ ip: '8.8.8.8', ua: 'curl/8.4.0' })).toMatchObject({ block: true, action: 'block', rule: 'cr_00000000000f', reason: 'rule' });
+    expect(c.verdict({ ip: '8.8.8.8', ua: 'Scrapy/2.11' })).toMatchObject({ block: false, allowed: false, warn: true, action: 'warn', rule: 'cr_00000000000e' });
+    expect(c.verdict({ ip: '8.8.8.8', path: '/healthz' })).toMatchObject({ allowed: true, action: 'skip', rule: 'cr_00000000000a' });
+    // the header getter travels the same path as every other MatchInput field
+    expect(c.verdict({ ip: '8.8.8.8', header: (n) => (n === 'x-api-key' ? 'leaked-key-1' : null) }))
+      .toMatchObject({ block: true, action: 'block', rule: 'cr_000000000019', reason: 'rule' });
+    // nothing matched: the flags the adapters read are all present and false
+    expect(c.verdict({ ip: '8.8.8.8', ua: 'Mozilla/5.0' })).toEqual({ block: false, challenge: false, allowed: false, warn: false, action: null, version: 'fixture-v5-rules' });
+  });
+
+  // The v4 body and the v5 body of one publish share meta.version; only the etag says which.
+  it('re-parses when a tenant gains the v5 container', async () => {
+    const v4 = readFileSync(new URL('./fixtures/blk3/v4-basic.bin', import.meta.url));
+    const v4meta = JSON.stringify({ ...JSON.parse(readFileSync(new URL('./fixtures/blk3/v4-basic.meta.json', import.meta.url), 'utf8')), version: 'same' });
+    const v5meta = JSON.stringify({ ...JSON.parse(meta5), version: 'same' });   // one publish, two bodies: same version, different etags
+    const bodies = [
+      new Response(frame(v4meta, new Uint8Array(v4)), { status: 200, headers: { etag: '"same-v4"', 'x-camada-config': CONFIG } }),
+      new Response(frame(v5meta, new Uint8Array(bin5)), { status: 200, headers: { etag: '"same-v5"', 'x-camada-config': CONFIG } }),
+    ];
+    const c = client(async () => bodies.shift()!);
+    c.ensureFresh();
+    await vi.waitFor(() => expect(c.matcher?.snap.format).toBe(4));
+    expect(c.verdict({ ip: '8.8.8.8', ua: 'curl/8.4.0' }).block).toBe(false);   // v4 cannot express the rule
+    c.ensureFresh();
+    await vi.waitFor(() => expect(c.matcher?.snap.format).toBe(5));
+    expect(c.verdict({ ip: '8.8.8.8', ua: 'curl/8.4.0' }).rule).toBe('cr_00000000000f');
   });
 });
 

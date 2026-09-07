@@ -1,0 +1,608 @@
+{
+  "rules": [
+    {
+      "id": "cr_00000000000a",
+      "name": "Skip the health check",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "path",
+          "op": "is",
+          "value": "/healthz"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Skip the health check",
+      "record": false
+    },
+    {
+      "id": "builtin:allow",
+      "name": "Allow-list",
+      "action": "skip",
+      "conds": [],
+      "enabled": true,
+      "expires": null,
+      "builtin": "allow",
+      "reason": "Allow-list"
+    },
+    {
+      "id": "builtin:block",
+      "name": "Manual blocks",
+      "action": "block",
+      "conds": [],
+      "enabled": true,
+      "expires": null,
+      "builtin": "block",
+      "reason": "Manual blocks"
+    },
+    {
+      "id": "cr_00000000000b",
+      "name": "Skip our monitoring range",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "ip",
+          "op": "is_in",
+          "value": [
+            "192.0.2.128/25",
+            "2001:db8:cafe::/48"
+          ]
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Skip our monitoring range"
+    },
+    {
+      "id": "cr_00000000000c",
+      "name": "Block the dump API from outside the office",
+      "action": "block",
+      "conds": [
+        {
+          "field": "path",
+          "op": "matches",
+          "value": "^/api/v[0-9]+/dump$"
+        },
+        {
+          "field": "ip",
+          "op": "not_in",
+          "value": [
+            "10.1.0.0/16"
+          ]
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block the dump API from outside the office"
+    },
+    {
+      "id": "cr_000000000014",
+      "name": "Block the CGNAT range except our own probes",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ip",
+          "op": "is_in",
+          "value": [
+            "100.64.0.0/16",
+            "2001:db8:beef::/48"
+          ]
+        },
+        {
+          "field": "ip",
+          "op": "not_in",
+          "value": [
+            "100.64.7.0/24"
+          ]
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block the CGNAT range except our own probes"
+    },
+    {
+      "id": "cr_00000000000d",
+      "name": "Challenge checkout outside the US",
+      "action": "challenge",
+      "conds": [
+        {
+          "field": "path",
+          "op": "starts_with",
+          "value": "/checkout"
+        },
+        {
+          "field": "country",
+          "op": "is_not",
+          "value": "US"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Challenge checkout outside the US"
+    },
+    {
+      "id": "cr_00000000000e",
+      "name": "Warn on scraper agents",
+      "action": "warn",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "(Scrapy|python-requests)/[0-9]"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Warn on scraper agents"
+    },
+    {
+      "id": "cr_00000000000f",
+      "name": "Block HTTP libraries",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "contains",
+          "value": "curl/"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block HTTP libraries"
+    },
+    {
+      "id": "cr_000000000019",
+      "name": "Block a leaked API key",
+      "action": "block",
+      "conds": [
+        {
+          "field": "header",
+          "op": "is",
+          "name": "X-Api-Key",
+          "value": "leaked-key-1"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block a leaked API key"
+    },
+    {
+      "id": "cr_00000000001a",
+      "name": "Warn on a proxy chain",
+      "action": "warn",
+      "conds": [
+        {
+          "field": "header",
+          "op": "contains",
+          "name": "via",
+          "value": "squid"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Warn on a proxy chain"
+    },
+    {
+      "id": "cr_00000000001b",
+      "name": "Challenge an old app build",
+      "action": "challenge",
+      "conds": [
+        {
+          "field": "header",
+          "op": "matches",
+          "name": "x-app-version",
+          "value": "^1\\.[0-2]\\."
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Challenge an old app build"
+    },
+    {
+      "id": "cr_000000000010",
+      "name": "Block a hosting ASN outside Germany",
+      "action": "block",
+      "conds": [
+        {
+          "field": "asn",
+          "op": "is_in",
+          "value": [
+            "64500",
+            "64501"
+          ]
+        },
+        {
+          "field": "country",
+          "op": "is_not",
+          "value": "DE"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block a hosting ASN outside Germany"
+    },
+    {
+      "id": "cr_000000000011",
+      "name": "Disabled: block Poland",
+      "action": "block",
+      "conds": [
+        {
+          "field": "country",
+          "op": "is",
+          "value": "PL"
+        }
+      ],
+      "enabled": false,
+      "expires": null,
+      "builtin": null,
+      "reason": "Disabled: block Poland"
+    },
+    {
+      "id": "cr_000000000012",
+      "name": "Block unverified crawler claims",
+      "action": "block",
+      "conds": [
+        {
+          "field": "bot.verified",
+          "op": "is",
+          "value": false
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block unverified crawler claims"
+    },
+    {
+      "id": "cr_000000000013",
+      "name": "Expired: block Norway",
+      "action": "block",
+      "conds": [
+        {
+          "field": "country",
+          "op": "is",
+          "value": "NO"
+        }
+      ],
+      "enabled": true,
+      "expires": 1,
+      "builtin": null,
+      "reason": "Expired: block Norway"
+    }
+  ],
+  "allow_entries": [
+    {
+      "key_type": "ip",
+      "key": "10.0.0.7"
+    },
+    {
+      "key_type": "cidr",
+      "key": "10.1.0.0/16"
+    },
+    {
+      "key_type": "ip",
+      "key": "2001:db8:dead::9"
+    },
+    {
+      "key_type": "asn",
+      "key": "14061"
+    },
+    {
+      "key_type": "country",
+      "key": "RU"
+    },
+    {
+      "key_type": "path",
+      "key": "/locked/allowed"
+    },
+    {
+      "key_type": "path",
+      "key": "/locked/public/"
+    },
+    {
+      "key_type": "header",
+      "key": "x-camada-probe: allow-me"
+    }
+  ],
+  "manual_entries": [
+    {
+      "key_type": "ip",
+      "key": "198.51.100.7"
+    },
+    {
+      "key_type": "cidr",
+      "key": "203.0.115.0/24"
+    },
+    {
+      "key_type": "path",
+      "key": "/wp-admin/"
+    },
+    {
+      "key_type": "header",
+      "key": "x-bad-client: blocked-agent"
+    }
+  ],
+  "published": [
+    {
+      "id": "cr_00000000000a",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "path",
+          "op": "is",
+          "value": "/healthz"
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "ip",
+          "op": "is_in",
+          "value": [
+            "10.0.0.7",
+            "10.1.0.0/16",
+            "2001:db8:dead::9"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "asn",
+          "op": "is_in",
+          "value": [
+            "14061"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "country",
+          "op": "is_in",
+          "value": [
+            "RU"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "path",
+          "op": "is",
+          "value": "/locked/allowed"
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "path",
+          "op": "starts_with",
+          "value": "/locked/public/"
+        }
+      ]
+    },
+    {
+      "id": "builtin:allow",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "header",
+          "op": "is",
+          "name": "x-camada-probe",
+          "value": "allow-me"
+        }
+      ]
+    },
+    {
+      "id": "builtin:block",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ip",
+          "op": "is_in",
+          "value": [
+            "198.51.100.7",
+            "203.0.115.0/24"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "builtin:block",
+      "action": "block",
+      "conds": [
+        {
+          "field": "path",
+          "op": "starts_with",
+          "value": "/wp-admin/"
+        }
+      ]
+    },
+    {
+      "id": "builtin:block",
+      "action": "block",
+      "conds": [
+        {
+          "field": "header",
+          "op": "is",
+          "name": "x-bad-client",
+          "value": "blocked-agent"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000000b",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "ip",
+          "op": "is_in",
+          "value": [
+            "192.0.2.128/25",
+            "2001:db8:cafe::/48"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000000c",
+      "action": "block",
+      "conds": [
+        {
+          "field": "path",
+          "op": "matches",
+          "value": "^/api/v[0-9]+/dump$"
+        },
+        {
+          "field": "ip",
+          "op": "not_in",
+          "value": [
+            "10.1.0.0/16"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000014",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ip",
+          "op": "is_in",
+          "value": [
+            "100.64.0.0/16",
+            "2001:db8:beef::/48"
+          ]
+        },
+        {
+          "field": "ip",
+          "op": "not_in",
+          "value": [
+            "100.64.7.0/24"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000000d",
+      "action": "challenge",
+      "conds": [
+        {
+          "field": "path",
+          "op": "starts_with",
+          "value": "/checkout"
+        },
+        {
+          "field": "country",
+          "op": "is_not",
+          "value": "US"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000000e",
+      "action": "warn",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "(Scrapy|python-requests)/[0-9]"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000000f",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "contains",
+          "value": "curl/"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000019",
+      "action": "block",
+      "conds": [
+        {
+          "field": "header",
+          "op": "is",
+          "name": "X-Api-Key",
+          "value": "leaked-key-1"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000001a",
+      "action": "warn",
+      "conds": [
+        {
+          "field": "header",
+          "op": "contains",
+          "name": "via",
+          "value": "squid"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000001b",
+      "action": "challenge",
+      "conds": [
+        {
+          "field": "header",
+          "op": "matches",
+          "name": "x-app-version",
+          "value": "^1\\.[0-2]\\."
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000010",
+      "action": "block",
+      "conds": [
+        {
+          "field": "asn",
+          "op": "is_in",
+          "value": [
+            "64500",
+            "64501"
+          ]
+        },
+        {
+          "field": "country",
+          "op": "is_not",
+          "value": "DE"
+        }
+      ]
+    }
+  ]
+}
