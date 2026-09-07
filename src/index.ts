@@ -1,4 +1,7 @@
-export { parseSnapshot, type Snapshot, type SnapshotMeta, type SnapshotSetMeta, type RangeSet, type SnapshotFormat } from './snapshot/parse.js';
+export {
+  parseSnapshot, type Snapshot, type SnapshotMeta, type SnapshotSetMeta, type SnapshotRuleMeta, type SnapshotCondMeta,
+  type RangeSet, type SnapshotFormat, type RuleAction, type CompiledRule, type RuleCond, type RuleRequest,
+} from './snapshot/parse.js';
 export { Matcher, type MatchInput, type MatchResult, type MatchReason, type BlockReason } from './snapshot/match.js';
 export { SnapshotClient, type SnapshotClientOptions, type Verdict } from './snapshot/client.js';
 export { parseIp4, parseIp6Into } from './snapshot/ipparse.js';
@@ -8,7 +11,7 @@ export { scrubQuery, bodyShape, hashUserId, REDACT_ALLOWLIST } from './redact.js
 export { resolveClientIp, parseTrustedProxyEnv, type TrustedProxyConfig } from './ip.js';
 export { parseKey, type CamadaKey, type CamadaRemoteConfig } from './config.js';
 export { guarded, guardedAsync, logRateLimited } from './guarded.js';
-export { TAP_NODE, TAP_NEXT, TAP_HONO, type Tap, DEFAULT_REFRESH_MS, KILL_SWITCH_ENV } from './constants.js';
+export { TAP_NODE, TAP_NEXT, TAP_HONO, type Tap, DEFAULT_REFRESH_MS, DEFAULT_SNAPSHOT_VERSION, type SnapshotVersion, KILL_SWITCH_ENV } from './constants.js';
 export {
   CHALLENGE_COOKIE, CHALLENGE_TTL_MS, POW_BITS, NONCE_HEX,
   challengeCookie, safeReturnTo, wantsHtml, escapeAttr, escapeScript, parseFormBody, powOk, safeEqual, splitToken,

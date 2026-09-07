@@ -1,5 +1,5 @@
 {
-  "version": "0.1.1",
+  "version": "0.2.0",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -17,7 +17,7 @@
     "check": "tsc --noEmit"
   },
   "name": "@camada/core",
-  "description": "camada SDK core: BLK3 snapshot parser/matcher, snapshot client, event queue, redaction, trusted-proxy IP resolution",
+  "description": "camada SDK core: BLK snapshot parser/matcher (v3-v5, ordered custom rules), snapshot client, event queue, redaction, trusted-proxy IP resolution",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
