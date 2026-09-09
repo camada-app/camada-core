@@ -70,17 +70,12 @@ const res = await app(req);                                  // keep r.vars in t
 if (r) { cam.after(req, r.vars, res.status); return r.vars.sessionCookie ? withSetCookie(res, r.vars.sessionCookie) : res; }
 ```
 
-`before()` resolves the engine (one per configuration; an unconfigured request is never cached),
-refreshes the snapshot, resolves the client address — an already-resolved `ip` the host vouches
-for wins, else the socket `peer` and `X-Forwarded-For` under the trusted-proxy rules, never a
-bare header — runs the verdict, answers a block (403 + `x-block-*`), a challenge (serve/verify),
-`GET scriptPath` (the injected beacon IIFE) and `POST fpPath` (the ≤32 KB relay as a `sig: 1`
-row), and otherwise mints the ids the app, the beacon and the post-response event share.
-`after()` ships the wire event with the settled status (`null` where the host cannot see it),
-honouring the tenant's `exclude` / `sample`. `track(vars, …)` and `scriptTag(vars)` are the
-app-facing helpers; each adapter wraps them around its own per-request lookup. `mode: 'timer'`
+The client address is an already-resolved `ip` the host vouches for, else the socket `peer`
+and `X-Forwarded-For` under the trusted-proxy rules — never a bare header. `track(vars, …)` and
+`scriptTag(vars)` are the app-facing helpers, keyed on the vars the adapter kept. `mode: 'timer'`
 polls on an unref'd interval and installs the exit flush (long-lived hosts); the default `lazy`
-refreshes per request through `waitUntil` (edge and serverless). `CAMADA_SERVERLESS=1` forces lazy.
+refreshes per request through `waitUntil` (edge and serverless); `CAMADA_SERVERLESS=1` forces
+lazy. The full pipeline is contracts.md §D.
 
 ## Conformance fixtures
 
