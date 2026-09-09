@@ -4,7 +4,15 @@
 export const TAP_NODE = 'sdk-node';
 export const TAP_NEXT = 'sdk-next';
 export const TAP_HONO = 'sdk-hono';
-export type Tap = typeof TAP_NODE | typeof TAP_NEXT | typeof TAP_HONO;
+// SDK-G04: the five @camada/core/fetch adapters. Each sits in-app (edge-analyst TAP_CAPS IN_APP).
+export const TAP_SVELTEKIT = 'sdk-sveltekit';
+export const TAP_NUXT = 'sdk-nuxt';
+export const TAP_REMIX = 'sdk-remix';
+export const TAP_BUN = 'sdk-bun';
+export const TAP_DENO = 'sdk-deno';
+export type Tap =
+  | typeof TAP_NODE | typeof TAP_NEXT | typeof TAP_HONO
+  | typeof TAP_SVELTEKIT | typeof TAP_NUXT | typeof TAP_REMIX | typeof TAP_BUN | typeof TAP_DENO;
 
 export const DEFAULT_REFRESH_MS = 30_000;
 

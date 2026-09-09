@@ -11,7 +11,7 @@ export { scrubQuery, bodyShape, hashUserId, REDACT_ALLOWLIST } from './redact.js
 export { resolveClientIp, parseTrustedProxyEnv, type TrustedProxyConfig } from './ip.js';
 export { parseKey, type CamadaKey, type CamadaRemoteConfig } from './config.js';
 export { guarded, guardedAsync, logRateLimited } from './guarded.js';
-export { TAP_NODE, TAP_NEXT, TAP_HONO, type Tap, DEFAULT_REFRESH_MS, DEFAULT_SNAPSHOT_VERSION, type SnapshotVersion, KILL_SWITCH_ENV } from './constants.js';
+export { TAP_NODE, TAP_NEXT, TAP_HONO, TAP_SVELTEKIT, TAP_NUXT, TAP_REMIX, TAP_BUN, TAP_DENO, type Tap, DEFAULT_REFRESH_MS, DEFAULT_SNAPSHOT_VERSION, type SnapshotVersion, KILL_SWITCH_ENV } from './constants.js';
 export {
   CHALLENGE_COOKIE, CHALLENGE_TTL_MS, POW_BITS, NONCE_HEX,
   challengeCookie, safeReturnTo, wantsHtml, escapeAttr, escapeScript, parseFormBody, powOk, safeEqual, splitToken,
