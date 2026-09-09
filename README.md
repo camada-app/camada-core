@@ -5,9 +5,10 @@ port of the edge collector's `blocklist.js`, pinned by golden conformance fixtur
 from the reference implementation), the `/snapshot` polling client, the batched event queue,
 the redaction layer, and trusted-proxy client-IP resolution.
 
-Applications don't install this directly — use [`@camada/node`](../camada-node) or
-[`@camada/next`](../camada-next). Not yet published to npm; consumed via `file:` dependencies
-from sibling checkouts.
+Applications don't install this directly — use [`@camada/node`](../camada-node),
+[`@camada/next`](../camada-next), [`@camada/hono`](../camada-hono), or one of the Web-fetch
+adapters (`@camada/sveltekit`, `@camada/nuxt`, `@camada/remix`, `@camada/bun`, `@camada/deno`).
+Not yet published to npm; consumed via `file:` dependencies from sibling checkouts.
 
 ## What's inside
 
@@ -53,6 +54,33 @@ from sibling checkouts.
 - **`resolveClientIp`** — socket peer by default; `X-Forwarded-For` is only consulted under an
   explicit trusted-proxy config (`hops` / `cidrs` / `vercel`), so a spoofed XFF can't reach the
   analysis or the blocklist.
+
+## `@camada/core/fetch` — the shared Web-fetch pipeline
+
+Since 0.3.0 (SDK-G04) the request pipeline every Web-`Request`/`Response` adapter needs lives
+here, as a second entry point, so a new runtime is a thin binding rather than a copy of
+`@camada/hono`:
+
+```ts
+import { createFetchCamada, withSetCookie } from '@camada/core/fetch';
+const cam = createFetchCamada({ tap: TAP_BUN, sdk: '@camada/bun/0.1.0', iife }, opts);
+const r = await cam.before(req, { peer, waitUntil, env });   // { response } | { vars } | null (inert)
+if (r?.response) return r.response;                          // 403, the challenge, the beacon endpoints
+const res = await app(req);                                  // keep r.vars in the framework's per-request slot
+if (r) { cam.after(req, r.vars, res.status); return r.vars.sessionCookie ? withSetCookie(res, r.vars.sessionCookie) : res; }
+```
+
+`before()` resolves the engine (one per configuration; an unconfigured request is never cached),
+refreshes the snapshot, resolves the client address — an already-resolved `ip` the host vouches
+for wins, else the socket `peer` and `X-Forwarded-For` under the trusted-proxy rules, never a
+bare header — runs the verdict, answers a block (403 + `x-block-*`), a challenge (serve/verify),
+`GET scriptPath` (the injected beacon IIFE) and `POST fpPath` (the ≤32 KB relay as a `sig: 1`
+row), and otherwise mints the ids the app, the beacon and the post-response event share.
+`after()` ships the wire event with the settled status (`null` where the host cannot see it),
+honouring the tenant's `exclude` / `sample`. `track(vars, …)` and `scriptTag(vars)` are the
+app-facing helpers; each adapter wraps them around its own per-request lookup. `mode: 'timer'`
+polls on an unref'd interval and installs the exit flush (long-lived hosts); the default `lazy`
+refreshes per request through `waitUntil` (edge and serverless). `CAMADA_SERVERLESS=1` forces lazy.
 
 ## Conformance fixtures
 
