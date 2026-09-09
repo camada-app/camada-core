@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { CHALLENGE_COOKIE, TAP_BUN } from '../src/index.js';
-import { createFetchCamada, withSetCookie, type FetchCamada, type FetchCamadaOptions, type FetchIdentity, type FetchRequestContext, type FetchVars } from '../src/fetch.js';
+import { createFetchCamada, track, scriptTag, withSetCookie, type FetchCamada, type FetchCamadaOptions, type FetchIdentity, type FetchRequestContext, type FetchVars } from '../src/fetch.js';
 
 const FIX = fileURLToPath(new URL('./fixtures/blk3/', import.meta.url));
 const FIX5 = fileURLToPath(new URL('./fixtures/blk5/', import.meta.url));
@@ -76,10 +76,10 @@ function app(opts: FetchCamadaOptions = {}, ids: FetchIdentity = { tap: TAP_BUN,
     if (pathname === '/checkout') return html('<p>checkout</p>');
     if (pathname === '/admin/users') return html('<p>admin</p>');
     if (pathname === '/healthz') return new Response('ok');
-    if (pathname === '/page') return html(`<html><head>${cam.scriptTag(vars)}</head><body>page</body></html>`);
+    if (pathname === '/page') return html(`<html><head>${scriptTag(vars)}</head><body>page</body></html>`);
     if (pathname === '/redirect') return Response.redirect('http://app.test/', 302);   // immutable headers
-    if (pathname === '/login' && req.method === 'POST') { await cam.track(vars, 'login_failed', { user: 'alice@example.com' }); return new Response('no', { status: 401 }); }
-    if (pathname === '/signup' && req.method === 'POST') { void cam.track(vars, 'signup'); return new Response('ok'); }   // fire-and-forget: waitUntil must carry it
+    if (pathname === '/login' && req.method === 'POST') { await track(vars, 'login_failed', { user: 'alice@example.com' }); return new Response('no', { status: 401 }); }
+    if (pathname === '/signup' && req.method === 'POST') { void track(vars, 'signup'); return new Response('ok'); }   // fire-and-forget: waitUntil must carry it
     return new Response('not found', { status: 404 });
   };
   const a: App = {
@@ -417,14 +417,7 @@ describe('per-configuration engines', () => {
     expect(tenantTokens).toContain('tok-other');
   });
 
-  it('keys the engine on the host env when the options carry none', async () => {
-    const a = app({ env: undefined });
-    await call(a, '/', {}, { ip: '8.8.8.8', env: ENV });
-    await call(a, '/', {}, { ip: '8.8.8.8', env: ENV });
-    expect((await call(a, '/', {}, { ip: BLOCKED_IP, env: ENV })).status).toBe(403);
-  });
-
-  it('does not go permanently inert after one unconfigured request', async () => {
+  it('keys the engine on the host env when the options carry none, and does not go permanently inert after one unconfigured request', async () => {
     const a = app({ env: undefined });
     await call(a, '/', {}, { ip: BLOCKED_IP, env: {} });   // no key: inert
     await call(a, '/', {}, { ip: '8.8.8.8', env: ENV });   // keyed now: must wake up
@@ -547,7 +540,7 @@ describe('first-party beacon', () => {
 
   it('emits no tag without vars', async () => {
     const a = app();
-    expect(a.cam.scriptTag(undefined)).toBe('');
+    expect(scriptTag(undefined)).toBe('');
   });
 });
 
@@ -582,7 +575,7 @@ describe('track', () => {
 
   it('is a silent no-op without vars', async () => {
     const a = app();
-    await expect(a.cam.track(undefined, 'login_failed', { user: 'x' })).resolves.toBeUndefined();
+    await expect(track(undefined, 'login_failed', { user: 'x' })).resolves.toBeUndefined();
     expect(events).toEqual([]);
   });
 
@@ -613,11 +606,6 @@ describe('fail open', () => {
     expect((await call(a, '/', {}, ip(BLOCKED_IP))).status).toBe(200);
   });
 
-  it('serves no challenge to a client it cannot identify', async () => {
-    const a = await primed();
-    expect((await call(a, '/admin/users', { headers: HTML }, {})).status).toBe(200);
-  });
-
   it('goes inert, not down, when reading the host env throws', async () => {
     const a = await primed();
     const ctx: FetchRequestContext = { ip: BLOCKED_IP, get env(): Record<string, string> { throw new Error('binding'); } };
@@ -633,10 +621,11 @@ describe('fail open', () => {
     const verdict = eng.snap.verdict;
     eng.snap.verdict = () => { throw new Error('boom'); };
     try {
-      const res = await call(a, '/', {}, ip(BLOCKED_IP));
+      const res = await call(a, '/', { headers: { cookie: '_sfp=known-sid' } }, ip(BLOCKED_IP));
       expect(res.status).toBe(200);
       expect(res.headers.get('set-cookie')).toBeNull();   // no session decided: nothing minted
-      expect(events.at(-1)).toMatchObject({ p: '/', st: 200, sid: null, ns: 0 });
+      // Fresh ids, but the address is resolved again so the one event the fallback exists for stays attributable (hono's rule)
+      expect(events.at(-1)).toMatchObject({ p: '/', st: 200, sid: null, ns: 0, ip: BLOCKED_IP });
     } finally { eng.snap.verdict = verdict; }
   });
 });

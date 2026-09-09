@@ -22,7 +22,7 @@ const SCRIPT_PATH = '/_cam/b.js';   // the beacon IIFE; its auto-init posts to t
 const FP_PATH = '/_cam/fp';
 const FP_MAX = 32 * 1024;        // matches the analyst's /fp cap: never accept what ingest will 413
 export const SESSION_COOKIE = '_sfp';   // the same session cookie as every other tap: sid/ns stay comparable
-const SESSION_MAX_AGE = 2592000;
+export const SESSION_MAX_AGE = 2592000;   // 30 days; exported so an adapter setting the cookie through its framework API matches
 const BODY_MAX = 4 * 1024;       // the verify form is ~120 bytes; anything larger is not ours
 const encoder = new TextEncoder();
 
@@ -52,6 +52,7 @@ export interface FetchRequestContext {
 }
 
 export interface Engine {
+  tap: Tap;
   env: ResolvedFetchEnv;
   snap: SnapshotClient;
   queue: EventQueue;
@@ -60,7 +61,7 @@ export interface Engine {
 
 interface Facts { asn: number | null; country: string | null; tlsx: string | null; httpVersion: string | null }
 
-/** Per-request state the adapter keeps for `after()`, `track()` and `scriptTag()`. */
+/** Per-request state the adapter keeps in its framework's slot: `after()`, `track()` and `scriptTag()` read it. */
 export interface FetchVars {
   eng: Engine;
   rid: string;                    // the request id the page event carries; the beacon and track() join on it
@@ -83,8 +84,6 @@ export interface FetchCamada {
   before(req: Request, ctx?: FetchRequestContext): Promise<BeforeResult>;
   /** Ships the wire event with the settled status (`null` where the host cannot see it). Never throws. */
   after(req: Request, vars: FetchVars, status: number | null): void;
-  track(vars: FetchVars | undefined, event: string, data?: { user?: string }): Promise<void>;
-  scriptTag(vars: FetchVars | undefined): string;
   /** Test/reset hook: stops and drops every cached engine. */
   reset(): void;
 }
@@ -101,7 +100,7 @@ const cookieValue = (cookie: string, name: string): string | null => {
 const trustedProxy = (e: Engine): TrustedProxyConfig | null =>
   e.env.trustedProxy ?? e.snap.config?.trusted_proxy ?? null;
 
-export const beaconEnabled = (e: Engine): boolean => e.snap.config?.beacon !== false;   // tenant switch; a cold engine serves
+const beaconEnabled = (e: Engine): boolean => e.snap.config?.beacon !== false;   // tenant switch; a cold engine serves
 
 /** Push then flush through `waitUntil` — the one rule every row (wire event, beacon, track()) follows. */
 function ship(e: Engine, ev: unknown, waitUntil: WaitUntil): void {
@@ -120,6 +119,33 @@ export function withSetCookie(res: Response, cookie: string): Response {
     out.headers.append('set-cookie', cookie);
     return out;
   }
+}
+
+/**
+ * Records an outcome the app knows and the wire cannot show: `login_failed`, `login_succeeded`,
+ * `signup`, `password_reset`, `mfa_failed`, `payment_failed`, `payment_succeeded`, `coupon_failed`
+ * (free-form; that vocabulary is what the analyst's rules read). Joined to this request's event
+ * through its rid and session. The user identifier is HMAC-hashed in-process with the ingest
+ * token — the raw value never reaches the queue. Never throws, never rejects; awaiting it is
+ * optional (the flush rides `waitUntil`), so a handler may fire and forget. A no-op without vars,
+ * so an adapter forwards its slot lookup as it is.
+ */
+export function track(vars: FetchVars | undefined, event: string, data?: { user?: string }): Promise<void> {
+  if (!vars) return Promise.resolve();
+  const p = guardedAsync(async () => {
+    const uid = data?.user ? await hashUserId(data.user, vars.eng.env.ingestToken) : null;
+    ship(vars.eng, { tap: vars.eng.tap, et: event, uid, rid: vars.rid, sid: vars.sid, ip: vars.ip, ts: Date.now() }, vars.waitUntil);
+  }, undefined);
+  vars.waitUntil(p);   // the isolate may freeze right after the response: hold it open for the flush
+  return p;
+}
+
+/** The `<script>` tag for an HTML response — `''` without vars (camada did not run for this request) or when the tenant turned the beacon off. */
+export function scriptTag(vars: FetchVars | undefined): string {
+  return guarded(() => {
+    if (!vars || !beaconEnabled(vars.eng)) return '';
+    return `<script src="${vars.scriptPath}?r=${vars.rid}" async></script>`;
+  }, '');
 }
 
 export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = {}): FetchCamada {
@@ -146,7 +172,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     if (cached) return cached;
     const injected = opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {};   // never pass an explicit undefined key
     const engine: Engine = {
-      env: resolved,
+      tap, env: resolved,
       snap: new SnapshotClient({ url: resolved.snapshotUrl, token: resolved.snapToken, mode: resolved.mode, sdk: id.sdk, snapshotVersion, ...injected }),
       queue: new EventQueue({ url: resolved.ingestUrl, token: resolved.ingestToken, sdk: id.sdk, ...injected }),
       kit: createChallengeAsync({ secret: resolved.secret }),
@@ -306,9 +332,12 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       return { vars: { eng, rid: crypto.randomUUID(), sid: mintedSid, newSession, sessionCookie, ip, warnRule, scriptPath, waitUntil, facts } };
     }, undefined);
 
-    // The guard threw before deciding: let the app run and still ship its event, with fresh ids —
-    // a camada bug costs the join, never the telemetry (@camada/hono's rule).
-    return answered ?? { vars: { eng, rid: crypto.randomUUID(), sid: null, newSession: false, sessionCookie: null, ip: null, warnRule: null, scriptPath, waitUntil, facts } };
+    // The guard threw before deciding: let the app run and still ship its event, with fresh ids
+    // and the client address resolved again — a camada bug costs the join, never the telemetry
+    // or its attribution (@camada/hono's rule). No session is minted: nothing was decided.
+    if (answered) return answered;
+    const ip = guarded(() => clientIp(eng, req, ctx), null);
+    return { vars: { eng, rid: crypto.randomUUID(), sid: null, newSession: false, sessionCookie: null, ip, warnRule: null, scriptPath, waitUntil, facts } };
   }
 
   function after(req: Request, vars: FetchVars, status: number | null): void {
@@ -326,36 +355,10 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     }, undefined);
   }
 
-  /**
-   * Records an outcome the app knows and the wire cannot show: `login_failed`, `login_succeeded`,
-   * `signup`, `password_reset`, `mfa_failed`, `payment_failed`, `payment_succeeded`, `coupon_failed`
-   * (free-form; that vocabulary is what the analyst's rules read). Joined to this request's event
-   * through its rid and session. The user identifier is HMAC-hashed in-process with the ingest
-   * token — the raw value never reaches the queue. Never throws, never rejects; awaiting it is
-   * optional (the flush rides `waitUntil`), so a handler may fire and forget.
-   */
-  function track(vars: FetchVars | undefined, event: string, data?: { user?: string }): Promise<void> {
-    if (!vars) return Promise.resolve();
-    const p = guardedAsync(async () => {
-      const uid = data?.user ? await hashUserId(data.user, vars.eng.env.ingestToken) : null;
-      ship(vars.eng, { tap, et: event, uid, rid: vars.rid, sid: vars.sid, ip: vars.ip, ts: Date.now() }, vars.waitUntil);
-    }, undefined);
-    vars.waitUntil(p);   // the isolate may freeze right after the response: hold it open for the flush
-    return p;
-  }
-
-  /** The `<script>` tag for an HTML response — `''` when camada is off for this request or the tenant turned the beacon off. */
-  function scriptTag(vars: FetchVars | undefined): string {
-    return guarded(() => {
-      if (!vars || !beaconEnabled(vars.eng)) return '';
-      return `<script src="${vars.scriptPath}?r=${vars.rid}" async></script>`;
-    }, '');
-  }
-
   function reset(): void {
     for (const e of engines.values()) { e.snap.stop(); e.queue.stop(); }
     engines.clear();
   }
 
-  return { before, after, track, scriptTag, reset };
+  return { before, after, reset };
 }
