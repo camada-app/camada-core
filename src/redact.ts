@@ -40,10 +40,10 @@ export function bodyShape(obj: unknown): Record<string, number> | null {
 
 /** Stable per-tenant pseudonym for a user identifier: HMAC-SHA256 keyed by the ingest token,
  *  labeled so the hash can never double as anything else. The raw identifier never leaves.
- *  `subtle` is injectable because Node 18 has no global webcrypto — @camada/node passes
- *  node:crypto's; edge runtimes and Node 19+ use the global. Core itself stays edge-safe. */
+ *  `subtle` defaults to the global WebCrypto (Node ≥20 and every edge runtime have one) and stays
+ *  injectable for hosts that hand in their own, as @camada/node does. Core itself stays edge-safe. */
 export async function hashUserId(id: string, ingestToken: string, subtle: SubtleCrypto | undefined = globalThis.crypto?.subtle): Promise<string> {
-  if (!subtle) throw new Error('camada: no WebCrypto available — pass a SubtleCrypto (Node 18: require("node:crypto").webcrypto.subtle)');
+  if (!subtle) throw new Error('camada: no WebCrypto available — this SDK needs Node >=20 or an edge runtime with globalThis.crypto.subtle (or pass a SubtleCrypto)');
   const enc = new TextEncoder();
   const key = await subtle.importKey('raw', enc.encode(ingestToken), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const sig = await subtle.sign('HMAC', key, enc.encode('uid:' + id));
