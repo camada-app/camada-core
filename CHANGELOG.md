@@ -27,6 +27,11 @@
 
 ### Fixed
 
+- Path rules match the canonical path. A percent-encoded, upper-cased or trailing-slash spelling
+  (`/%62locked`, `/BLOCKED`, `/blocked/`) used to slip past a path block while the framework still
+  routed it to the blocked handler. Block rules match any form of the path; allow and skip rules
+  need both the literal and the decoded form to match, as the edge analyst does.
+  `RuleRequest.path` is now `RuleRequest.paths`.
 - Deno 2.9 `fetch()` responses with a gzip body: a copy (the session cookie on an immutable
   response, the SSE re-wrap) drops the stale `Content-Encoding` and `Content-Length`, as Deno.serve
   does for the original. The decoded bytes used to go out cut to the compressed length, labelled
