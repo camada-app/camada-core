@@ -70,6 +70,30 @@ export function onBodyDone(res: Response, done: () => void, opts: BodyDoneOption
       return reader.cancel(reason);
     },
   });
-  // A Response as the init copies status, statusText and headers (and, on workerd, `cf`/`webSocket`).
-  return new Response(body, res);
+  return copyResponse(res, body);
+}
+
+/**
+ * `new Response(body, res)` that the host serves the way it would serve `res`. A Response as the
+ * init copies status, statusText and headers (and, on workerd, `cf`/`webSocket`), but not host
+ * state: Deno 2.9's fetch() decodes a gzip/br body yet keeps the upstream Content-Encoding and
+ * Content-Length, and Deno.serve drops both for that response only, through an internal
+ * `bodyDecoded` flag a copy does not inherit. A plain copy would send the decoded bytes under the
+ * stale headers (cut to the compressed length, labelled gzip), so the copy drops them as Deno would.
+ * Deno <= 2.6 strips them at fetch() time already; Bun, Node and workerd copy faithfully as is.
+ */
+export function copyResponse(res: Response, body: BodyInit | null): Response {
+  const out = new Response(body, res);
+  if (denoBodyDecoded(res)) {
+    out.headers.delete('content-encoding');
+    out.headers.delete('content-length');
+  }
+  return out;
+}
+
+// ponytail: reads a Deno internal (Symbol("response").bodyDecoded); if Deno renames it the copy
+// keeps the stale headers again, which the gzip-upstream e2e on the latest Deno catches.
+function denoBodyDecoded(res: Response): boolean {
+  const inner = Object.getOwnPropertySymbols(res).find((s) => s.description === 'response');
+  return inner !== undefined && (res as unknown as Record<symbol, { bodyDecoded?: unknown } | undefined>)[inner]?.bodyDecoded === true;
 }
