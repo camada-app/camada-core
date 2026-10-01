@@ -381,10 +381,10 @@
           "path": "/locked"
         },
         "expect": {
-          "block": false,
+          "block": true,
           "challenge": false,
           "allowed": false,
-          "reason": null
+          "reason": "path"
         }
       },
       {
@@ -684,6 +684,414 @@
           "challenge": false,
           "allowed": false,
           "reason": "ip4"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/%62locked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked%2Dpath"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/BLOCKED-PATH"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/Blocked-Path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path/"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "//blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path//"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/x/../blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/./blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/x/%2e%2E/blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path;jsessionid=1"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/x/..;/blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path#frag"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-pathx"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path.json"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked%2Fpath"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path%00"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/%6Cocked/x"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/LOCKED/x"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/Locked"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked%2Fx"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/lockedx/y"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/../x"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/API/v2/dump"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/api/v2/%64ump"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/api/v2/dump/"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/LOCKED/ALLOWED"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/allowed/"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/Public/x"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/public/../secret"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/public/%2e%2e/secret"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/CHECKOUT"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/Admin/Users"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
         }
       }
     ],
@@ -1095,10 +1503,10 @@
           "path": "/locked"
         },
         "expect": {
-          "block": false,
+          "block": true,
           "challenge": false,
           "allowed": false,
-          "reason": null
+          "reason": "path"
         }
       },
       {
@@ -1383,9 +1791,9 @@
         },
         "expect": {
           "block": false,
-          "challenge": false,
+          "challenge": true,
           "allowed": false,
-          "reason": null
+          "reason": "path"
         }
       },
       {
@@ -1398,6 +1806,414 @@
           "challenge": false,
           "allowed": false,
           "reason": "ip4"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/%62locked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked%2Dpath"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/BLOCKED-PATH"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/Blocked-Path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path/"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "//blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path//"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/x/../blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/./blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/x/%2e%2E/blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path;jsessionid=1"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/x/..;/blocked-path"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path#frag"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-pathx"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path.json"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked%2Fpath"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/blocked-path%00"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/%6Cocked/x"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/LOCKED/x"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/Locked"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked%2Fx"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/lockedx/y"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "reason": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/../x"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/API/v2/dump"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/api/v2/%64ump"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/api/v2/dump/"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/LOCKED/ALLOWED"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/allowed/"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/Public/x"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": true,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/public/../secret"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/locked/public/%2e%2e/secret"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/CHECKOUT"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "reason": "path"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "path": "/Admin/Users"
+        },
+        "expect": {
+          "block": false,
+          "challenge": true,
+          "allowed": false,
+          "reason": "path"
         }
       }
     ],

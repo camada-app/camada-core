@@ -12,6 +12,7 @@
 
 import { inRange4, type Snapshot, type RangeSet, type RuleAction, type RuleRequest, type CompiledRule } from './parse.js';
 import { parseIp4, parseIp6Into } from './ipparse.js';
+import { pathForms, pathHit, prefixHit, type PathForms } from './path.js';
 
 export interface MatchInput {
   ip?: string | null;
@@ -38,18 +39,14 @@ export interface MatchResult {
   version?: string;
 }
 
-const cleanPath = (raw: string | null | undefined): string => {
-  const p = raw || '/';
-  const q = p.indexOf('?');
-  return q === -1 ? p : p.slice(0, q);
-};
-
-/** Walks every '/'-terminated ancestor of `path`, the way the block side does. */
-function prefixHit(prefixes: Set<string>, path: string): boolean {
-  let i = path.indexOf('/', 1);
-  while (i !== -1) { if (prefixes.has(path.slice(0, i + 1))) return true; i = path.indexOf('/', i + 1); }
+/** Exact, prefix and (block side only) regex entries against one canonical-or-raw path form. */
+function pathIn(exact: Set<string>, prefix: Set<string>, regex: RegExp[], p: string): boolean {
+  if (exact.has(p)) return true;
+  if (prefix.size && prefixHit(prefix, p)) return true;
+  for (const re of regex) if (re.test(p)) return true;
   return false;
 }
+const NO_REGEX: RegExp[] = [];
 
 /** A side decided (or nothing did): no rule, so `action` is null and `rule` absent. */
 const NONE = { block: false, challenge: false, allowed: false, warn: false, action: null } as const;
@@ -73,7 +70,7 @@ export class Matcher {
   // The rule request is scratch too: filled per match(), read only inside the rule loop. `in6`
   // hands the predicates the v6 search over W, so nothing about the address leaves this instance.
   private readonly R: RuleRequest = {
-    n4: -1, has6: false, asn: null, country: null, tlsx: null, path: '/', ua: null, header: null,
+    n4: -1, has6: false, asn: null, country: null, tlsx: null, paths: ['/', '/', '/'], ua: null, header: null,
     in6: (pairs, n) => this.inRange6(pairs, n),
   };
   constructor(readonly snap: Snapshot) {}
@@ -121,16 +118,8 @@ export class Matcher {
     return false;
   }
 
-  private blockedPath(path: string): boolean {
-    const S = this.snap;
-    if (S.pathsExact.has(path)) return true;
-    if (S.pathsPrefix.size && prefixHit(S.pathsPrefix, path)) return true;
-    for (const re of S.pathsRegex) if (re.test(path)) return true;
-    return false;
-  }
-
-  /** The block side: v3 sections plus the top-level meta. */
-  private blockSide(input: MatchInput, n4: number, has6: boolean): MatchReason | null {
+  /** The block side: v3 sections plus the top-level meta. A deny: any spelling of the path counts. */
+  private blockSide(input: MatchInput, n4: number, has6: boolean, paths: PathForms): MatchReason | null {
     const S = this.snap;
     if (n4 >= 0 && this.blocked4(n4)) return 'ip4';
     if (has6 && this.blocked6()) return 'ip6';
@@ -138,22 +127,21 @@ export class Matcher {
     if (input.country && S.country.size && S.country.has(input.country)) return 'country';
     if (input.tlsx && S.tls.has(input.tlsx)) return 'tls';
     if (S.pathsExact.size || S.pathsPrefix.size || S.pathsRegex.length) {
-      if (this.blockedPath(cleanPath(input.path))) return 'path';
+      if (pathHit((p) => pathIn(S.pathsExact, S.pathsPrefix, S.pathsRegex, p), paths, true)) return 'path';
     }
     return null;
   }
 
-  /** A v4 side list (allow or challenge). No tls axis: §A3's side meta has no tls key. */
-  private side(set: RangeSet, input: MatchInput, n4: number, has6: boolean): MatchReason | null {
+  /** A v4 side list (allow or challenge). No tls axis: §A3's side meta has no tls key. `deny` is
+   *  false for the allow side: an exemption needs every canonical spelling of the path. */
+  private side(set: RangeSet, input: MatchInput, n4: number, has6: boolean, paths: PathForms, deny: boolean): MatchReason | null {
     if (set.empty) return null;   // the common v3 snapshot
     if (n4 >= 0 && inRange4(set.r4, n4)) return 'ip4';
     if (has6 && this.inRange6(set.r6, set.n6)) return 'ip6';
     if (input.asn !== undefined && input.asn !== null && set.asn.has(input.asn)) return 'asn';
     if (input.country && set.country.has(input.country)) return 'country';
     if (set.pathsExact.size || set.pathsPrefix.size) {
-      const p = cleanPath(input.path);
-      if (set.pathsExact.has(p)) return 'path';
-      if (set.pathsPrefix.size && prefixHit(set.pathsPrefix, p)) return 'path';
+      if (pathHit((p) => pathIn(set.pathsExact, set.pathsPrefix, NO_REGEX, p), paths, deny)) return 'path';
     }
     return null;
   }
@@ -168,22 +156,23 @@ export class Matcher {
       if (ip.indexOf(':') === -1) n4 = parseIp4(ip);
       else has6 = parseIp6Into(ip, this.W, this.G);
     }
+    const paths = pathForms(input.path);
     if (S.rules.length) {
       const r = this.R;
       r.n4 = n4; r.has6 = has6;
       r.asn = input.asn ?? null; r.country = input.country ?? null; r.tlsx = input.tlsx ?? null;
-      r.path = cleanPath(input.path); r.ua = input.ua ?? null; r.header = input.header ?? null;
+      r.paths = paths; r.ua = input.ua ?? null; r.header = input.header ?? null;
       for (const rule of S.rules) {              // the order IS the precedence (§A4): first match wins
         let hit = true;
         for (const cond of rule.conds) if (!cond(r)) { hit = false; break; }   // a plain loop: every() would allocate a closure per rule
         if (hit) return ruleResult(rule, S.version);
       }
     }
-    const allowed = this.side(S.allow, input, n4, has6);
+    const allowed = this.side(S.allow, input, n4, has6, paths, false);
     if (allowed) return { ...NONE, allowed: true, reason: allowed, version: S.version };
-    const blocked = this.blockSide(input, n4, has6);
+    const blocked = this.blockSide(input, n4, has6, paths);
     if (blocked) return { ...NONE, block: true, reason: blocked, version: S.version };
-    const chal = this.side(S.challenge, input, n4, has6);
+    const chal = this.side(S.challenge, input, n4, has6, paths, true);
     if (chal) return { ...NONE, challenge: true, reason: chal, version: S.version };
     return { ...NONE, version: S.version };
   }
