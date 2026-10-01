@@ -105,3 +105,28 @@ describe('EventQueue', () => {
     queue.stop();
   });
 });
+
+describe('exit flush', () => {
+  it('flushes on SIGTERM and still exits where the host refuses process.kill (Deno without --allow-run)', async () => {
+    const { EventEmitter } = await import('node:events');
+    const exits: number[] = [];
+    const proc = Object.assign(new EventEmitter(), {
+      pid: 4242,
+      kill: () => { throw new Error('NotCapable: Requires run access'); },
+      exit: (code: number) => { exits.push(code); },
+    });
+    const posted: string[] = [];
+    vi.stubGlobal('process', proc);
+    try {
+      const queue = new EventQueue({ url: 'https://a.test', token: 't', fetchImpl: (async (u: string) => { posted.push(String(u)); return new Response(null, { status: 202 }); }) as typeof fetch });
+      queue.installNodeExitFlush();
+      queue.push({ p: '/' });
+      proc.emit('SIGTERM');
+      await vi.waitFor(() => expect(exits).toEqual([143]));
+      expect(posted).toEqual(['https://a.test/e']);   // the batch went out before the exit
+      queue.stop();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

@@ -1,8 +1,21 @@
-// Response timing that covers the body. A fetch-style handler returns its Response before a
-// streamed body has been sent, so "the handler returned" is time-to-first-byte. `onBodyDone`
-// re-wraps the body in a pass-through stream and calls `done` once the host has pulled the last
-// chunk, the client went away (cancel), or the source stream errored — whichever comes first,
-// exactly once. Nothing is buffered: each chunk is handed on as soon as it is read.
+// Response timing that covers a streamed body. A fetch-style handler returns its Response before
+// a streamed body has been sent, so "the handler returned" is time-to-first-byte. `onBodyDone`
+// re-wraps a server-sent-events body in a pass-through stream and calls `done` once the host has
+// pulled the last chunk, the client went away (cancel), or the source stream errored — whichever
+// comes first, exactly once. Nothing is buffered: each chunk is handed on as soon as it is read.
+//
+// Every other response is returned untouched and `done` runs at once, so its dur is the time to
+// first byte (for a buffered body, effectively the whole response). The decision reads only the
+// method, the status and the headers, never `res.body`, because re-wrapping, or even reading
+// `.body`, changes what the client receives on some hosts:
+//   - workerd, Bun and Deno send a string, Blob, file, R2 or FixedLengthStream body with a
+//     Content-Length that is not in res.headers; a JS stream goes out chunked.
+//   - Bun keeps the implicit Content-Type of a string or Blob body outside res.headers and drops
+//     it once `.body` is read; Deno 2.2 drops Content-Length once `.body` is read.
+//   - Bun < 1.2.10 sends a re-wrapped empty body as a bare 200; Deno < 2.6 rejects a copied 101.
+// None of that is visible from JS, so a fixed-length body cannot be told apart. An explicit
+// `text/event-stream` with no Content-Length is a JS stream the host already sends chunked, and
+// wrapping it leaves the status and headers byte-identical (checked on workerd, Bun and Deno).
 //
 // On Workers the body must also be kept alive: when the client disconnects mid-stream, workerd
 // keeps pumping the body only while the request has a pending `waitUntil`, and otherwise drops it
@@ -16,15 +29,26 @@ export interface BodyDoneOptions {
   waitUntil?: (p: Promise<unknown>) => void;
 }
 
+/** True for a response whose body is a stream worth waiting for: an explicit server-sent-events
+ *  body of unknown length. Reads the method, status and headers only, never `res.body`. */
+function isStreamed(res: Response, method?: string): boolean {
+  if (method === 'HEAD') return false;
+  const s = res.status;
+  if (s < 200 || s === 204 || s === 205 || s === 304) return false;   // 1xx (a 101 upgrade) and the null-body statuses
+  if (res.headers.has('content-length')) return false;
+  return /^\s*text\/event-stream\s*(;|$)/i.test(res.headers.get('content-type') ?? '');
+}
+
 /**
- * Returns a Response that sends the same status, headers and bytes as `res`, calling `done()`
- * once its body has been fully read, cancelled or has errored. With no body to wait for (a null
- * body, or a HEAD request, whose body the host discards unread) `done()` runs now and `res`
- * comes back as it is. `done` must not throw; it is called at most once.
+ * Returns the Response to send. A streamed response (see `isStreamed`) comes back with its body
+ * re-wrapped so that `done()` runs once the body has been fully read, cancelled or has errored;
+ * the status and headers are the same. Any other response comes back as the very same object, and
+ * `done()` runs now. `done` must not throw; it is called exactly once.
  */
 export function onBodyDone(res: Response, done: () => void, opts: BodyDoneOptions = {}): Response {
+  if (!isStreamed(res, opts.method)) { done(); return res; }
   const src = res.body;
-  if (!src || opts.method === 'HEAD' || res.bodyUsed) { done(); return res; }
+  if (!src || res.bodyUsed) { done(); return res; }
   let fired = false;
   let settle = () => {};
   const fire = () => { if (!fired) { fired = true; done(); settle(); } };

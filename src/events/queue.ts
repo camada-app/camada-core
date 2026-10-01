@@ -108,7 +108,13 @@ export class EventQueue {
       const handler = () => {
         proc.removeListener(sig, handler);
         if (proc.listenerCount(sig) > 0) { void this.flush(); return; }   // the app owns shutdown; just drain quietly
-        const done = () => proc.kill(proc.pid, sig);
+        const done = () => {
+          try {
+            proc.kill(proc.pid, sig);   // re-raise: with this handler gone, the default action exits with the signal's status
+          } catch {
+            proc.exit(128 + (sig === 'SIGINT' ? 2 : 15));   // Deno without --allow-run refuses process.kill (NotCapable); exit with the same status
+          }
+        };
         Promise.race([this.flush(), new Promise((r) => setTimeout(r, 500))]).then(done, done);
       };
       proc.on(sig, handler);
