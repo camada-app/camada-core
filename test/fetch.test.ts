@@ -605,6 +605,33 @@ describe('session', () => {
   });
 });
 
+describe('copyResponse under @hono/node-server', () => {
+  it('gives the copy headers of its own when the host Response keeps the init\'s', async () => {
+    // node-server's lightweight Response stores a stream body's init.headers as is, so a copy of a
+    // fetch() result would share its immutable Headers and could never take the session cookie.
+    const Native = globalThis.Response;
+    class Lightweight {
+      readonly status: number; readonly statusText: string; readonly headers: Headers;
+      constructor(readonly body: BodyInit | null, init: ResponseInit = {}) {
+        this.status = init.status ?? 200;
+        this.statusText = init.statusText ?? '';
+        this.headers = init.headers instanceof Headers ? init.headers : new Headers(init.headers);
+      }
+    }
+    const upstream = new Native(new ReadableStream(), { status: 203, headers: { 'x-up': '1' } });
+    Object.defineProperty(upstream.headers, 'append', { value: () => { throw new TypeError('immutable'); } });
+    globalThis.Response = Lightweight as unknown as typeof Response;
+    try {
+      const out = withSetCookie(upstream, '_sfp=x');
+      expect(out.status).toBe(203);
+      expect(out.body).toBe(upstream.body);
+      expect([...out.headers]).toEqual([['set-cookie', '_sfp=x'], ['x-up', '1']]);
+    } finally {
+      globalThis.Response = Native;
+    }
+  });
+});
+
 describe('after() reads only the vars', () => {
   it('ships the event once the request is closed (Deno.upgradeWebSocket), with the status it is given', async () => {
     const a = await primed();
