@@ -62,7 +62,7 @@ const fetchImpl: typeof fetch = (async (url: string | URL | Request, init?: Requ
   return new Response(null, { status: 202 });
 }) as typeof fetch;
 
-/** The smallest possible adapter: before → app → after, cookie appended, vars kept in a local. */
+/** The smallest possible adapter: before → app → finish, cookie appended, vars kept in a local. */
 interface App { cam: FetchCamada; fetch(req: Request, ctx: FetchRequestContext): Promise<Response>; lastVars?: FetchVars }
 const created: FetchCamada[] = [];
 function app(opts: FetchCamadaOptions = {}, ids: FetchIdentity = { tap: TAP_BUN, sdk: SDK, iife: IIFE }): App {
@@ -76,6 +76,7 @@ function app(opts: FetchCamadaOptions = {}, ids: FetchIdentity = { tap: TAP_BUN,
     if (pathname === '/checkout') return html('<p>checkout</p>');
     if (pathname === '/admin/users') return html('<p>admin</p>');
     if (pathname === '/healthz') return new Response('ok');
+    if (pathname === '/stream') return new Response(slowBody(3, 40));   // ~120 ms of body after the handler returned
     if (pathname === '/page') return html(`<html><head>${scriptTag(vars)}</head><body>page</body></html>`);
     if (pathname === '/redirect') return Response.redirect('http://app.test/', 302);   // immutable headers
     if (pathname === '/login' && req.method === 'POST') { await track(vars, 'login_failed', { user: 'alice@example.com' }); return new Response('no', { status: 401 }); }
@@ -90,8 +91,7 @@ function app(opts: FetchCamadaOptions = {}, ids: FetchIdentity = { tap: TAP_BUN,
       if (r.response) return r.response;
       a.lastVars = r.vars;
       const res = await handle(req, r.vars);
-      cam.after(req, r.vars, res.status);
-      return r.vars.sessionCookie ? withSetCookie(res, r.vars.sessionCookie) : res;
+      return cam.finish(req, r.vars, r.vars.sessionCookie ? withSetCookie(res, r.vars.sessionCookie) : res);
     },
   };
   return a;
@@ -99,12 +99,25 @@ function app(opts: FetchCamadaOptions = {}, ids: FetchIdentity = { tap: TAP_BUN,
 
 const ip = (addr: string | null, extra: FetchRequestContext = {}): FetchRequestContext => ({ ip: addr, ...extra });
 
-/** Drives one request, recording what the pipeline hands to waitUntil and settling it. */
+/** A body that sends `n` chunks `ms` apart, as a streamed handler would. */
+function slowBody(n: number, ms: number): ReadableStream<Uint8Array> {
+  let i = 0;
+  return new ReadableStream({
+    async pull(ctrl) {
+      await new Promise((r) => setTimeout(r, ms));
+      if (i++ < n) ctrl.enqueue(new TextEncoder().encode(`chunk${i};`)); else ctrl.close();
+    },
+  });
+}
+
+/** Drives one request as a host would — sends the whole body — recording what the pipeline hands
+ *  to waitUntil and settling it. The body comes back read, in a fresh Response. */
 async function call(a: App, path: string, init: RequestInit = {}, ctx: FetchRequestContext = ip('8.8.8.8')): Promise<Response> {
   const waits: Promise<unknown>[] = [];
   const res = await a.fetch(new Request(`http://app.test${path}`, init), { ...ctx, waitUntil: (p) => { waits.push(p); } });
+  const body = res.body ? await res.arrayBuffer() : null;
   await Promise.all(waits);
-  return res;
+  return new Response(body, res);
 }
 
 function postSolution(a: App, addr: string, body: string): Promise<Response> {
@@ -154,6 +167,41 @@ describe('capture', () => {
     expect(events.at(-1)!.dur).toBeGreaterThanOrEqual(0);   // never null on a captured request
   });
 
+  it('times a streamed body to its last byte, not the moment the handler returned', async () => {
+    const a = await primed();
+    const req = new Request('http://app.test/stream');
+    const waits: Promise<unknown>[] = [];
+    const res = await a.fetch(req, ip('8.8.8.8', { waitUntil: (p) => { waits.push(p); } }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(events.some((e) => e.p === '/stream')).toBe(false);   // nothing ships while the body is still going out
+    let held = true;
+    void Promise.all(waits).then(() => { held = false; });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(held).toBe(true);   // waitUntil holds the isolate until the body is done (workerd drops an abandoned one otherwise)
+    expect(await res.text()).toBe('chunk1;chunk2;chunk3;');      // the bytes pass through unchanged
+    await Promise.all(waits);
+    const ev = events.find((e) => e.p === '/stream')!;
+    expect(ev.st).toBe(200);
+    expect(ev.dur as number).toBeGreaterThanOrEqual(140);         // 4 pulls x 40 ms: the body, not time to first byte
+  });
+
+  it('ships once when the client cancels a streamed body, and at once for a HEAD', async () => {
+    const a = await primed();
+    const waits: Promise<unknown>[] = [];
+    const ctx = ip('8.8.8.8', { waitUntil: (p) => { waits.push(p); } });
+    const res = await a.fetch(new Request('http://app.test/stream'), ctx);
+    const reader = res.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    await reader.cancel();
+    await Promise.all(waits);
+    expect(events.filter((e) => e.p === '/stream')).toHaveLength(1);
+    const head = await a.fetch(new Request('http://app.test/stream', { method: 'HEAD' }), ctx);
+    await Promise.all(waits);
+    expect(events.filter((e) => e.p === '/stream')).toHaveLength(2);   // a HEAD body is discarded unread: waiting on it would never ship
+    await head.body?.cancel();
+  });
+
   it('ships a 404 as the app answered it, and st null where the host cannot see the status', async () => {
     const a = await primed();
     await call(a, '/nope');
@@ -162,7 +210,7 @@ describe('capture', () => {
     const r = await a.cam.before(req, ip('8.8.8.8'));
     a.cam.after(req, r!.vars!, null);
     await r!.vars!.eng.queue.flush();
-    expect(events.at(-1)).toMatchObject({ p: '/blind', st: null });
+    expect(events.at(-1)).toMatchObject({ p: '/blind', st: null, dur: null });   // an unseen response has no settle time either
   });
 
   it('reports the identity it was given on every batch and asks for the newest snapshot', async () => {

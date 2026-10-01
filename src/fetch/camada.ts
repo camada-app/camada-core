@@ -2,7 +2,8 @@
 // @camada/hono's middleware with the host-specific parts lifted out: the adapter supplies the
 // socket peer (or an already-resolved client ip), any geo/TLS facts its runtime vouches for, a
 // `waitUntil` where the isolate needs holding open, and the env; it stores the returned vars in
-// its framework's per-request slot and calls `after()` once the response has settled. Everything
+// its framework's per-request slot and hands the app's response to `finish()` (or calls `after()`
+// where it sees only the status). Everything
 // runs inside camada's fail-open envelope: a camada bug, a dead ingest or a corrupt snapshot
 // costs telemetry, never the app's response.
 import { SnapshotClient } from '../snapshot/client.js';
@@ -11,6 +12,7 @@ import { buildWireEvent, type WireEvent } from '../events/build.js';
 import { resolveClientIp, type TrustedProxyConfig } from '../ip.js';
 import { hashUserId } from '../redact.js';
 import { guarded, guardedAsync, logRateLimited } from '../guarded.js';
+import { onBodyDone } from '../body.js';
 import { createChallengeAsync, type AsyncChallengeKit } from '../challenge/verify-async.js';
 import { challengePage } from '../challenge/page.js';
 import { challengeCookie, safeReturnTo, wantsHtml, parseFormBody, CHALLENGE_COOKIE } from '../challenge/format.js';
@@ -73,7 +75,7 @@ export interface FetchVars {
   scriptPath: string;
   waitUntil: WaitUntil;
   facts: Facts;
-  t0: number;                     // Date.now() when `before()` started: `after()` ships `dur` = now - t0 (ms), @camada/node's semantics
+  t0: number;                     // Date.now() when `before()` started: the event ships `dur` = settle - t0 (ms), @camada/node's semantics
 }
 
 export type BeforeResult = { response: Response; vars?: undefined } | { response?: undefined; vars: FetchVars } | null;
@@ -83,8 +85,13 @@ export interface FetchCamada {
    *  beacon endpoints. `{ response }` = camada answered; `{ vars }` = let the app run and call
    *  `after()`; `null` = inert for this request (no key, or CAMADA_DISABLED). */
   before(req: Request, ctx?: FetchRequestContext): Promise<BeforeResult>;
-  /** Ships the wire event with the settled status (`null` where the host cannot see it). Never throws. */
+  /** Ships the wire event now, with the settled status. `null` = the host cannot see the
+   *  response, so it cannot say when it settled either: the event ships `st` and `dur` null. Never throws. */
   after(req: Request, vars: FetchVars, status: number | null): void;
+  /** The usual end of a request: returns the response to send, with its body wrapped so the
+   *  event ships once the last byte has gone out (or the client left) — `dur` covers a streamed
+   *  body, not just the first byte. Never buffers, never throws. */
+  finish(req: Request, vars: FetchVars, res: Response): Response;
   /** Test/reset hook: stops and drops every cached engine. */
   reset(): void;
 }
@@ -352,10 +359,21 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       if (Math.random() >= (cfg?.sample ?? 1)) return;
       const ev = buildEvent(req, path, url.search, vars.ip, vars.sid, vars.facts, vars.rid, vars.newSession);
       ev.st = status;
-      ev.dur = Math.max(0, Date.now() - vars.t0);   // request start → response settled; never null once a request was captured
+      ev.dur = status === null ? null : Math.max(0, Date.now() - vars.t0);   // request start → response settled; unknown where the response is unseen
       if (vars.warnRule) ev.wrn = vars.warnRule;   // §D3: the warn rule that let this request through
       ship(eng, ev, vars.waitUntil);
     }, undefined);
+  }
+
+  function finish(req: Request, vars: FetchVars, res: Response): Response {
+    const status = res.status;
+    try {
+      return onBodyDone(res, () => after(req, vars, status), { method: req.method, waitUntil: vars.waitUntil });
+    } catch (err) {
+      logRateLimited(err);   // a locked or foreign body: ship now (time to first byte) and send the response untouched
+      after(req, vars, status);
+      return res;
+    }
   }
 
   function reset(): void {
@@ -363,5 +381,5 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     engines.clear();
   }
 
-  return { before, after, reset };
+  return { before, after, finish, reset };
 }
