@@ -583,6 +583,41 @@ describe('session', () => {
     expect(plain.headers.get('x-a')).toBe('1');
     expect(await plain.text()).toBe('body');
   });
+
+  it('withSetCookie rebuilds a Deno-decoded fetch() result without its stale Content-Encoding and Content-Length', async () => {
+    // Deno 2.9 fetch(): the body is decoded, the upstream headers are kept, the headers are immutable,
+    // and Deno.serve drops CE/CL for it through Symbol("response").bodyDecoded — the copy must too.
+    const decoded = (flag: boolean) => {
+      const res = new Response('decoded body', { headers: { 'content-encoding': 'gzip', 'content-length': '7', 'x-up': '1' } });
+      Object.defineProperty(res, Symbol('response'), { value: { bodyDecoded: flag } });
+      Object.defineProperty(res.headers, 'append', { value: () => { throw new TypeError('Headers are immutable.'); } });
+      return res;
+    };
+    const out = withSetCookie(decoded(true), '_sfp=x');
+    expect(out.headers.get('content-encoding')).toBeNull();
+    expect(out.headers.get('content-length')).toBeNull();
+    expect(out.headers.get('x-up')).toBe('1');
+    expect(out.headers.get('set-cookie')).toBe('_sfp=x');
+    expect(await out.text()).toBe('decoded body');
+    const raw = withSetCookie(decoded(false), '_sfp=x');   // a body the host did not decode keeps its encoding
+    expect(raw.headers.get('content-encoding')).toBe('gzip');
+    expect(raw.headers.get('content-length')).toBe('7');
+  });
+});
+
+describe('after() reads only the vars', () => {
+  it('ships the event once the request is closed (Deno.upgradeWebSocket), with the status it is given', async () => {
+    const a = await primed();
+    const req = new Request('http://app.test/ws', { headers: { upgrade: 'websocket', 'user-agent': 'ws-client' } });
+    const waits: Promise<unknown>[] = [];
+    const r = await a.cam.before(req, { ...ip('8.8.8.8'), waitUntil: (p) => { waits.push(p); } });
+    for (const k of ['headers', 'url', 'method']) Object.defineProperty(req, k, { get: () => { throw new TypeError('Request closed'); } });
+    a.cam.after(req, r!.vars!, 101);
+    await new Promise((res) => setTimeout(res, 0));
+    await Promise.all(waits);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ p: '/ws', m: 'GET', ua: 'ws-client', st: 101, rid: r!.vars!.rid, ts: r!.vars!.t0 });
+  });
 });
 
 describe('first-party beacon', () => {

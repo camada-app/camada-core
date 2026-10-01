@@ -12,7 +12,7 @@ import { buildWireEvent, type WireEvent } from '../events/build.js';
 import { resolveClientIp, type TrustedProxyConfig } from '../ip.js';
 import { hashUserId } from '../redact.js';
 import { guarded, guardedAsync, logRateLimited } from '../guarded.js';
-import { onBodyDone } from '../body.js';
+import { onBodyDone, copyResponse } from '../body.js';
 import { createChallengeAsync, type AsyncChallengeKit } from '../challenge/verify-async.js';
 import { challengePage } from '../challenge/page.js';
 import { challengeCookie, safeReturnTo, wantsHtml, parseFormBody, CHALLENGE_COOKIE } from '../challenge/format.js';
@@ -76,6 +76,7 @@ export interface FetchVars {
   waitUntil: WaitUntil;
   facts: Facts;
   t0: number;                     // Date.now() when `before()` started: the event ships `ts` = t0 and `dur` = settle - t0 (ms), @camada/node's semantics
+  ev: WireEvent | null;           // the request's wire event, built in `before()` (after Deno.upgradeWebSocket the request is closed and reading it throws); `after()` fills st/dur
 }
 
 export type BeforeResult = { response: Response; vars?: undefined } | { response?: undefined; vars: FetchVars } | null;
@@ -117,14 +118,15 @@ function ship(e: Engine, ev: unknown, waitUntil: WaitUntil): void {
   e.queue.flush(waitUntil);
 }
 
-/** Appends a `set-cookie` to a response, rebuilding it when its headers are immutable
- *  (`Response.redirect()`, a `fetch()` result). The body stream and status are kept as they are. */
+/** Appends a `set-cookie` to a response in place, or rebuilds it when its headers are immutable
+ *  (`Response.redirect()`, a `fetch()` result). Either way the client gets the same status, body
+ *  bytes, Content-Encoding and Content-Length it would have got without the cookie (see copyResponse). */
 export function withSetCookie(res: Response, cookie: string): Response {
   try {
     res.headers.append('set-cookie', cookie);
     return res;
   } catch {
-    const out = new Response(res.body, res);
+    const out = copyResponse(res, res.body);
     out.headers.append('set-cookie', cookie);
     return out;
   }
@@ -339,7 +341,9 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       const mintedSid = sid ?? crypto.randomUUID();
       const secure = url.protocol === 'https:' ? '; Secure' : '';
       const sessionCookie = newSession ? `${SESSION_COOKIE}=${mintedSid}; Path=/; Max-Age=${SESSION_MAX_AGE}; HttpOnly; SameSite=Lax${secure}` : null;
-      return { vars: { eng, rid: crypto.randomUUID(), sid: mintedSid, newSession, sessionCookie, ip, warnRule, scriptPath, waitUntil, facts, t0 } };
+      const rid = crypto.randomUUID();
+      const ev = buildEvent(req, path, url.search, ip, mintedSid, facts, rid, newSession);
+      return { vars: { eng, rid, sid: mintedSid, newSession, sessionCookie, ip, warnRule, scriptPath, waitUntil, facts, t0, ev } };
     }, undefined);
 
     // The guard threw before deciding: let the app run and still ship its event, with fresh ids
@@ -347,18 +351,20 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     // or its attribution (@camada/hono's rule). No session is minted: nothing was decided.
     if (answered) return answered;
     const ip = guarded(() => clientIp(eng, req, ctx), null);
-    return { vars: { eng, rid: crypto.randomUUID(), sid: null, newSession: false, sessionCookie: null, ip, warnRule: null, scriptPath, waitUntil, facts, t0 } };
+    const rid = crypto.randomUUID();
+    const ev = guarded(() => { const url = new URL(req.url); return buildEvent(req, url.pathname, url.search, ip, null, facts, rid); }, null);
+    return { vars: { eng, rid, sid: null, newSession: false, sessionCookie: null, ip, warnRule: null, scriptPath, waitUntil, facts, t0, ev } };
   }
 
-  function after(req: Request, vars: FetchVars, status: number | null): void {
+  // Reads only `vars`, never the request: after Deno.upgradeWebSocket, `req.headers` throws.
+  function after(_req: Request, vars: FetchVars, status: number | null): void {
     void guardedAsync(async () => {
-      const eng = vars.eng;
-      const url = new URL(req.url);
-      const path = url.pathname;
+      const { eng, ev } = vars;
+      if (!ev) return;
+      const path = ev.p as string;
       const cfg = eng.snap.config;
       if ((cfg?.exclude || []).some((x) => path.startsWith(x))) return;
       if (Math.random() >= (cfg?.sample ?? 1)) return;
-      const ev = buildEvent(req, path, url.search, vars.ip, vars.sid, vars.facts, vars.rid, vars.newSession);
       ev.ts = vars.t0;   // the request start: the timeline draws [ts, ts + dur]
       ev.st = status;
       ev.dur = status === null ? null : Math.max(0, Date.now() - vars.t0);   // request start → response settled; unknown where the response is unseen

@@ -87,8 +87,16 @@ On Workers-class hosts, a promise that settles with an SSE body goes to the adap
 `waitUntil` up front (otherwise workerd stops pumping an abandoned body, with no close and no
 cancel), and the flush rides it too. While that is held, workerd may keep pulling the stream
 after the client has gone, so an aborted stream can record up to its full length there. `after(req, vars, status)` ships immediately where the
-adapter only knows a status (a thrown handler, a websocket upgrade). `status: null` means the
-response was not seen, so `st` and `dur` both ship null. `onBodyDone(res, done, { method,
+adapter only knows a status (a thrown handler, a websocket upgrade). It reads only `vars`:
+the event is built in `before()`, because after `Deno.upgradeWebSocket` the request is closed
+and reading its headers throws. `status: null` means the
+response was not seen, so `st` and `dur` both ship null.
+
+`withSetCookie` appends in place when the headers are mutable. When they are immutable (a
+`fetch()` result, `Response.redirect()`), it rebuilds the response so the client still gets the
+same status, body bytes, Content-Encoding and Content-Length. On Deno 2.9, a decoded `fetch()`
+body keeps the upstream gzip headers, which Deno.serve drops only for the original object, so the
+copy drops them too. The SSE re-wrap uses the same copy. `onBodyDone(res, done, { method,
 waitUntil })` from the main entry is the same rule, for pipelines of their own
 (`@camada/hono`). It returns `res` itself whenever it does not wrap.
 
