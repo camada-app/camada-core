@@ -32,6 +32,23 @@ describe('SnapshotClient', () => {
     expect(c.verdict({ ip: '203.0.113.66' })).toEqual({ block: false, challenge: false, allowed: false, warn: false, action: null, reason: 'cold' });
   });
 
+  it('stays cold until the first load is fully published (another request runs while the body is read)', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    const c = client(async () => {
+      const res = ok200();
+      const body = res.arrayBuffer.bind(res);
+      res.arrayBuffer = async () => { await held; return body(); };   // the load is mid-read here
+      return res;
+    });
+    c.ensureFresh();
+    await settle();
+    expect(c.verdict({ ip: '203.0.113.66' }).reason).toBe('cold');
+    release();
+    await settle();
+    expect(c.verdict({ ip: '203.0.113.66' }).block).toBe(true);
+  });
+
   it('loads on 200, matches, and exposes the config', async () => {
     const c = client(async () => ok200());
     c.ensureFresh();
