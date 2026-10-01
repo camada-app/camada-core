@@ -8,7 +8,7 @@ the redaction layer, and trusted-proxy client-IP resolution.
 Applications don't install this directly — use [`@camada/node`](../camada-node),
 [`@camada/next`](../camada-next), [`@camada/hono`](../camada-hono), or one of the Web-fetch
 adapters (`@camada/sveltekit`, `@camada/nuxt`, `@camada/remix`, `@camada/bun`, `@camada/deno`).
-Not yet published to npm; consumed via `file:` dependencies from sibling checkouts.
+Those depend on it, so `npm install` of any of them brings it along.
 
 ## What's inside
 
