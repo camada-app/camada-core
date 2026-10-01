@@ -16,6 +16,9 @@
 // Meta travels separately: { version, country[], tls[], pathsExact[], pathsPrefix[], pathsRegex[],
 //                            allow?: side, challenge?: side, rules?: [] } with side = { asn[], country[], pathsExact[], pathsPrefix[] }.
 // The version byte is advisory: sections 10-15 are read whenever they are present.
+// Every path value is canonicalised once here (./path.ts, contracts §D3 "Path matching").
+
+import { canonPath, dirKey, pathHit, pathPred, type PathForms } from './path.js';
 
 /** The non-IP half of a v4 side list (allow or challenge). */
 export interface SnapshotSetMeta {
@@ -83,7 +86,7 @@ export interface RuleRequest {
   asn?: number | null;
   country?: string | null;
   tlsx?: string | null;
-  path: string;                // already query-stripped
+  paths: PathForms;            // [raw (query cut), lit, full] — ./path.ts
   ua?: string | null;
   header?: ((name: string) => string | null) | null;   // called with an already lower-cased name; absent where the tap cannot read headers
   in6(pairs: Uint32Array, n: number): boolean;
@@ -133,8 +136,8 @@ const EMPTY = new Uint32Array(0);
 function rangeSet(r4: Uint32Array, r6: Uint32Array, m?: SnapshotSetMeta): RangeSet {
   const asn = new Set((m?.asn || []).map(Number));
   const country = new Set(m?.country || []);
-  const pathsExact = new Set(m?.pathsExact || []);
-  const pathsPrefix = new Set(m?.pathsPrefix || []);
+  const pathsExact = new Set((m?.pathsExact || []).map((p) => canonPath(p)));
+  const pathsPrefix = new Set((m?.pathsPrefix || []).map(dirKey));
   const empty = r4.length === 0 && r6.length === 0
     && asn.size === 0 && country.size === 0 && pathsExact.size === 0 && pathsPrefix.size === 0;
   return { r4, r6, n6: r6.length >>> 3, asn, country, pathsExact, pathsPrefix, empty };
@@ -157,14 +160,17 @@ function fieldValue(f: string, r: RuleRequest): string | null {
   if (f === 'asn') return r.asn === undefined || r.asn === null ? null : String(r.asn);
   if (f === 'country') return r.country || null;
   if (f === 'tlsx') return r.tlsx || null;
-  if (f === 'path') return r.path;
   if (f === 'ua') return r.ua || null;
   return null;                                   // an entity-plane field (bot.verified, rule): never true here
 }
 
 /** One condition -> a predicate. `sets` yields this rule's (v4, v6) section pair per ip condition,
  *  in condition order, so an ip condition consumes the next one. */
-function compileCond(c: SnapshotCondMeta, sets: Array<[Uint32Array, Uint32Array]>): RuleCond {
+function compileCond(c: SnapshotCondMeta, sets: Array<[Uint32Array, Uint32Array]>, deny: boolean): RuleCond {
+  if (c.f === 'path') {                          // canonical forms, never the raw string (./path.ts)
+    const pred = pathPred(c.op, Array.isArray(c.v) ? c.v.map(String) : [String(c.v)]);
+    return (r) => pathHit(pred, r.paths, deny);
+  }
   const negate = c.op === 'is_not' || c.op === 'not_in';
   // A header condition reads the request through the caller's getter. The name is lower-cased
   // once, here, so the condition's own spelling never costs the hot path anything; a tap that
@@ -213,7 +219,7 @@ function compileRules(meta: SnapshotMeta, v4s: Uint32Array[], v6s: Uint32Array[]
     for (let k = 0; k < Math.max(v4.length, v6.length); k++) {
       sets.push([v4[k] ? v4[k].subarray(1) : EMPTY, v6[k] ? v6[k].subarray(1) : EMPTY]);
     }
-    try { out.push({ id: r.id, action: r.action as RuleAction, conds: (r.conds || []).map((c) => compileCond(c, sets)) }); }
+    try { out.push({ id: r.id, action: r.action as RuleAction, conds: (r.conds || []).map((c) => compileCond(c, sets, r.action !== 'skip')) }); }
     catch { /* a malformed rule is dropped, never enforced */ }
   });
   return out.filter((r) => r.conds.length > 0);  // a rule with no conditions would match everything
@@ -245,9 +251,9 @@ export function parseSnapshot(bin: ArrayBuffer | Uint8Array, meta: SnapshotMeta)
     asnBm: sec[8] || new Uint32Array(131072), asnExtra: sec[9] || EMPTY,
     country: new Set(meta.country || []),
     tls: new Set(meta.tls || []),
-    pathsExact: new Set(meta.pathsExact || []),
-    pathsPrefix: new Set(meta.pathsPrefix || []),
-    pathsRegex: (meta.pathsRegex || []).map((p) => new RegExp(p)),
+    pathsExact: new Set((meta.pathsExact || []).map((p) => canonPath(p))),
+    pathsPrefix: new Set((meta.pathsPrefix || []).map(dirKey)),
+    pathsRegex: (meta.pathsRegex || []).map((p) => new RegExp(p, 'i')),
     allow: rangeSet(sec[10] || EMPTY, sec[11] || EMPTY, meta.allow),
     challenge: rangeSet(sec[12] || EMPTY, sec[13] || EMPTY, meta.challenge),
     rules: compileRules(meta, rule4, rule6),

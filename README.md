@@ -26,6 +26,14 @@ Not yet published to npm; consumed via `file:` dependencies from sibling checkou
   `reason: 'rule'`; at most one of `allowed` / `block` / `challenge` / `warn` is ever true. A
   condition the request cannot answer (no `ua`, no header getter, no `asn`/`country`/`tlsx` off
   Cloudflare) is false for every operator, negatives included — the rule then does not fire.
+- **Path matching is canonical** — pass the raw request path (still percent-encoded, query
+  allowed). Both it and every published path value are canonicalised (`src/snapshot/path.ts`,
+  contracts §D3): printable `%XX` decoded except `%2F`, ASCII lower-cased, `;params` cut, `//`
+  and a trailing `/` dropped, `.`/`..` resolved. So `/%62locked-path`, `/BLOCKED-PATH`,
+  `/blocked-path/` and `/x/../blocked-path` all hit a `/blocked-path` block, a prefix `/locked/`
+  covers `/locked` itself, and path regexes are case-insensitive. A block, challenge or warn
+  fires on any spelling; an allow entry or a `skip` needs both canonical spellings, so
+  `/public/../admin` never borrows `/public/`'s exemption.
 - **Header conditions** — a rule may read one request header (`is`, `contains`, `matches`).
   Pass `header: (name) => string | null` on the `MatchInput`; it is always called with a
   lower-cased name, so the name a rule was written with never has to match the wire spelling.
