@@ -70,16 +70,27 @@ const res = await app(req);                                  // keep r.vars in t
 if (r) return cam.finish(req, r.vars, r.vars.sessionCookie ? withSetCookie(res, r.vars.sessionCookie) : res);
 ```
 
-`finish()` returns the response with its body re-wrapped in a pass-through stream and ships the
-event when the last chunk has been sent, the client cancelled, or the body errored. So `dur`
-(request start to settle, in ms) covers a streamed body, not just its first byte, and nothing is
-buffered. On Workers-class hosts a promise that settles with the body goes to the adapter's
-`waitUntil` up front (workerd stops pumping an abandoned body otherwise, with no close and no
-cancel), and the flush rides it too. A HEAD or a body-less response ships at once. `after(req, vars,
-status)` ships immediately where the adapter only knows a status (a thrown handler, a websocket
-upgrade); `status: null` means the response was not seen, so `st` and `dur` both ship null.
-`onBodyDone(res, done, { method, waitUntil })` from the main entry is the same body wrapper, for pipelines of
-their own (`@camada/hono`).
+`finish()` never changes what the client receives: the status and every header are the
+app's, byte for byte. A server-sent-events response (an explicit `content-type:
+text/event-stream`, no `content-length`, not a HEAD) comes back with its body re-wrapped in a
+pass-through stream, and the event ships when the last chunk has been sent, the client
+cancelled, or the body errored, so `dur` covers the stream. Nothing is buffered. Every other
+response comes back as the same object and ships at once, so its `dur` is the time to first
+byte, which for a buffered body is effectively the whole response. That covers fixed-length
+bodies, redirects, 1xx/204/304, upgrades and HEAD. Other streamed bodies (streamed HTML,
+NDJSON) are timed to their first byte as well. Their wire length cannot be told apart from a
+fixed body without reading `res.body`, and reading it already changes the response on some
+hosts (Bun drops the implicit Content-Type, Deno 2.2 the Content-Length). `ts` is the request
+start, so a request ran over `[ts, ts + dur]`.
+
+On Workers-class hosts, a promise that settles with an SSE body goes to the adapter's
+`waitUntil` up front (otherwise workerd stops pumping an abandoned body, with no close and no
+cancel), and the flush rides it too. While that is held, workerd may keep pulling the stream
+after the client has gone, so an aborted stream can record up to its full length there. `after(req, vars, status)` ships immediately where the
+adapter only knows a status (a thrown handler, a websocket upgrade). `status: null` means the
+response was not seen, so `st` and `dur` both ship null. `onBodyDone(res, done, { method,
+waitUntil })` from the main entry is the same rule, for pipelines of their own
+(`@camada/hono`). It returns `res` itself whenever it does not wrap.
 
 The client address is an already-resolved `ip` the host vouches for, else the socket `peer`
 and `X-Forwarded-For` under the trusted-proxy rules — never a bare header. `track(vars, …)` and

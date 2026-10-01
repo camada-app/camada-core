@@ -75,7 +75,7 @@ export interface FetchVars {
   scriptPath: string;
   waitUntil: WaitUntil;
   facts: Facts;
-  t0: number;                     // Date.now() when `before()` started: the event ships `dur` = settle - t0 (ms), @camada/node's semantics
+  t0: number;                     // Date.now() when `before()` started: the event ships `ts` = t0 and `dur` = settle - t0 (ms), @camada/node's semantics
 }
 
 export type BeforeResult = { response: Response; vars?: undefined } | { response?: undefined; vars: FetchVars } | null;
@@ -88,9 +88,10 @@ export interface FetchCamada {
   /** Ships the wire event now, with the settled status. `null` = the host cannot see the
    *  response, so it cannot say when it settled either: the event ships `st` and `dur` null. Never throws. */
   after(req: Request, vars: FetchVars, status: number | null): void;
-  /** The usual end of a request: returns the response to send, with its body wrapped so the
-   *  event ships once the last byte has gone out (or the client left) — `dur` covers a streamed
-   *  body, not just the first byte. Never buffers, never throws. */
+  /** The usual end of a request: returns the response to send. A server-sent-events body is
+   *  wrapped so the event ships once its last byte has gone out (or the client left) and `dur`
+   *  covers the stream; any other response is returned as it is and ships now (`dur` = time to
+   *  first byte). Never changes the status or headers, never buffers, never throws. */
   finish(req: Request, vars: FetchVars, res: Response): Response;
   /** Test/reset hook: stops and drops every cached engine. */
   reset(): void;
@@ -358,6 +359,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       if ((cfg?.exclude || []).some((x) => path.startsWith(x))) return;
       if (Math.random() >= (cfg?.sample ?? 1)) return;
       const ev = buildEvent(req, path, url.search, vars.ip, vars.sid, vars.facts, vars.rid, vars.newSession);
+      ev.ts = vars.t0;   // the request start: the timeline draws [ts, ts + dur]
       ev.st = status;
       ev.dur = status === null ? null : Math.max(0, Date.now() - vars.t0);   // request start → response settled; unknown where the response is unseen
       if (vars.warnRule) ev.wrn = vars.warnRule;   // §D3: the warn rule that let this request through
