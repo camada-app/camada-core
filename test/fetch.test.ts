@@ -76,7 +76,8 @@ function app(opts: FetchCamadaOptions = {}, ids: FetchIdentity = { tap: TAP_BUN,
     if (pathname === '/checkout') return html('<p>checkout</p>');
     if (pathname === '/admin/users') return html('<p>admin</p>');
     if (pathname === '/healthz') return new Response('ok');
-    if (pathname === '/stream') return new Response(slowBody(3, 40));   // ~120 ms of body after the handler returned
+    if (pathname === '/stream') return new Response(slowBody(3, 40), { headers: { 'content-type': 'text/event-stream' } });   // ~120 ms of body after the handler returned
+    if (pathname === '/plain-stream') return new Response(slowBody(3, 40));   // streamed, but nothing says so: ships at return
     if (pathname === '/page') return html(`<html><head>${scriptTag(vars)}</head><body>page</body></html>`);
     if (pathname === '/redirect') return Response.redirect('http://app.test/', 302);   // immutable headers
     if (pathname === '/login' && req.method === 'POST') { await track(vars, 'login_failed', { user: 'alice@example.com' }); return new Response('no', { status: 401 }); }
@@ -200,6 +201,66 @@ describe('capture', () => {
     await Promise.all(waits);
     expect(events.filter((e) => e.p === '/stream')).toHaveLength(2);   // a HEAD body is discarded unread: waiting on it would never ship
     await head.body?.cancel();
+  });
+
+  it('stamps ts at the request start, so [ts, ts + dur] is when the request ran', async () => {
+    const a = await primed();
+    const t = Date.now();
+    await call(a, '/stream');
+    const ev = events.find((e) => e.p === '/stream')!;
+    expect(ev.ts as number).toBeGreaterThanOrEqual(t);
+    expect(ev.ts as number).toBeLessThanOrEqual(t + 20);              // the start, not the settle ~160 ms later
+    expect((ev.ts as number) + (ev.dur as number)).toBeGreaterThanOrEqual(t + 140);
+  });
+
+  it('ships a stream that does not say it is server-sent events at once, with the response untouched', async () => {
+    const a = await primed();
+    const res = await a.fetch(new Request('http://app.test/plain-stream'), ip('8.8.8.8'));
+    await vi.waitFor(() => expect(events.some((e) => e.p === '/plain-stream')).toBe(true));   // time to first byte: the body is still unread
+    expect(events.find((e) => e.p === '/plain-stream')!.dur as number).toBeLessThan(100);
+    expect(await res.text()).toBe('chunk1;chunk2;chunk3;');
+  });
+
+  it('hands back the very same Response for everything but an SSE body, and never reads its body', async () => {
+    const a = await primed();
+    // A body getter that throws: workerd, Bun and Deno change the wire once `.body` is read
+    // (Bun loses the implicit Content-Type, Deno 2.2 the Content-Length), so it must not be.
+    const reads: string[] = [];
+    const sealed = (res: Response): Response => {
+      const body = res.body;
+      return Object.defineProperty(res, 'body', { get() { reads.push(res.url || res.headers.get('content-type') || String(res.status)); return body; } });
+    };
+    const sse = { 'content-type': 'text/event-stream' };
+    const cases: Array<[string, Response, RequestInit?]> = [
+      ['fixed', sealed(new Response('x'.repeat(5000)))],
+      ['css', sealed(new Response(new Blob(['a{}'], { type: 'text/css' })))],
+      ['stream', sealed(new Response(slowBody(1, 1)))],
+      ['length', sealed(new Response('data: x\n\n', { headers: { ...sse, 'content-length': '10' } }))],
+      ['redirect', sealed(Response.redirect('http://app.test/', 302))],
+      ['cookie', sealed(new Response('', { status: 200, headers: { 'set-cookie': 'a=1' } }))],
+      ['no-content', sealed(new Response(null, { status: 204, headers: sse }))],
+      ['not-modified', sealed(new Response(null, { status: 304, headers: sse }))],
+      ['head', sealed(new Response(slowBody(1, 1), { headers: sse })), { method: 'HEAD' }],
+    ];
+    for (const [name, res, init] of cases) {
+      const req = new Request(`http://app.test/${name}`, init);
+      const r = await a.cam.before(req, ip('8.8.8.8'));
+      expect(a.cam.finish(req, r!.vars!, res), name).toBe(res);
+    }
+    expect(reads).toEqual([]);
+    await vi.waitFor(() => expect(events.length).toBe(cases.length));   // and each one shipped, once, at return
+  });
+
+  it('wraps an SSE body with the same status and headers', async () => {
+    const a = await primed();
+    const req = new Request('http://app.test/events');
+    const r = await a.cam.before(req, ip('8.8.8.8'));
+    const res = new Response(slowBody(1, 1), { status: 200, headers: { 'content-type': 'Text/Event-Stream; charset=utf-8', 'set-cookie': 'a=1', 'x-a': 'b' } });
+    const out = a.cam.finish(req, r!.vars!, res);
+    expect(out).not.toBe(res);
+    expect(out.status).toBe(200);
+    expect([...out.headers]).toEqual([...res.headers]);
+    expect(await out.text()).toBe('chunk1;');
   });
 
   it('ships a 404 as the app answered it, and st null where the host cannot see the status', async () => {
