@@ -140,6 +140,20 @@ describe('capture', () => {
     expect(events.some((e) => e.tap === 'sdk-bun' && e.p === '/' && e.st === 200)).toBe(true);
   });
 
+  it('ships dur: whole ms from before() to after(), non-negative, covering the app time', async () => {
+    const a = await primed();
+    const req = new Request('http://app.test/slow');
+    const r = await a.cam.before(req, ip('8.8.8.8'));
+    await new Promise((res) => setTimeout(res, 30));
+    a.cam.after(req, r!.vars!, 200);
+    await r!.vars!.eng.queue.flush();
+    const dur = events.at(-1)!.dur as number;
+    expect(Number.isInteger(dur)).toBe(true);
+    expect(dur).toBeGreaterThanOrEqual(25);
+    await call(a, '/fast');
+    expect(events.at(-1)!.dur).toBeGreaterThanOrEqual(0);   // never null on a captured request
+  });
+
   it('ships a 404 as the app answered it, and st null where the host cannot see the status', async () => {
     const a = await primed();
     await call(a, '/nope');
