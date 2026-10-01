@@ -376,7 +376,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
   function finish(req: Request, vars: FetchVars, res: Response): Response {
     const status = res.status;
     try {
-      return onBodyDone(res, () => after(req, vars, status), { method: req.method, waitUntil: vars.waitUntil });
+      return onBodyDone(res, () => after(req, vars, status), { method: req.method, waitUntil: vars.waitUntil, get signal() { return req.signal; } });   // read on workerd only
     } catch (err) {
       logRateLimited(err);   // a locked or foreign body: ship now (time to first byte) and send the response untouched
       after(req, vars, status);

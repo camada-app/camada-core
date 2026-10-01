@@ -91,10 +91,13 @@ fixed body without reading `res.body`, and reading it already changes the respon
 hosts (Bun drops the implicit Content-Type, Deno 2.2 the Content-Length). `ts` is the request
 start, so a request ran over `[ts, ts + dur]`.
 
-On Workers-class hosts, a promise that settles with an SSE body goes to the adapter's
-`waitUntil` up front (otherwise workerd stops pumping an abandoned body, with no close and no
-cancel), and the flush rides it too. While that is held, workerd may keep pulling the stream
-after the client has gone, so an aborted stream can record up to its full length there. `after(req, vars, status)` ships immediately where the
+On workerd an SSE body is piped through the native `IdentityTransformStream` instead, and the
+pipe goes to the adapter's `waitUntil` (the flush rides it too). workerd never pulls or cancels
+a JS stream once the client has gone, so a JS wrapper there would hold `waitUntil` on nothing,
+which workerd reports as a hung Worker. The native pipe errors when the client disconnects,
+cancels the source (a proxied upstream SSE closes one chunk behind a camada-free Worker) and
+ships the event, its `dur` ending when workerd noticed. With the `enable_request_signal`
+compatibility flag, `request.signal` cancels it at once. `after(req, vars, status)` ships immediately where the
 adapter only knows a status (a thrown handler, a websocket upgrade). It reads only `vars`:
 the event is built in `before()`, because after `Deno.upgradeWebSocket` the request is closed
 and reading its headers throws. `status: null` means the
@@ -105,7 +108,7 @@ response was not seen, so `st` and `dur` both ship null.
 same status, body bytes, Content-Encoding and Content-Length. On Deno 2.9, a decoded `fetch()`
 body keeps the upstream gzip headers, which Deno.serve drops only for the original object, so the
 copy drops them too. The SSE re-wrap uses the same copy. `onBodyDone(res, done, { method,
-waitUntil })` from the main entry is the same rule, for pipelines of their own
+waitUntil, signal })` from the main entry is the same rule, for pipelines of their own
 (`@camada/hono`). It returns `res` itself whenever it does not wrap.
 
 The client address is an already-resolved `ip` the host vouches for, else the socket `peer`
