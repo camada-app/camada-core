@@ -3,7 +3,7 @@
 //   200  BLK3 body + etag + x-camada-meta + x-camada-config
 //   304  nothing changed; config headers repeated (config refreshes every poll for free)
 //   204  authenticated, no snapshot published -> enforce nothing, fail open
-// Semantics ported exactly: single-in-flight load; loadedAt stamped even on 204 (retry per
+// Semantics ported exactly: single-in-flight load; loadedAt stamped last, even on 204 (retry per
 // poll cadence, not per request); any error keeps the previous snapshot; cold = fail open.
 
 import { parseSnapshot, type SnapshotMeta, type RuleAction } from './parse.js';
@@ -97,7 +97,13 @@ export class SnapshotClient {
     const get = this.opts.fetchImpl;   // a local, so the call has no receiver even if a caller handed us a bare global
     const res = await get(this.opts.url, { headers, signal: AbortSignal.timeout(this.opts.fetchTimeoutMs) });
     if (res.status !== 200 && res.status !== 204 && res.status !== 304) return;   // 401/5xx: keep what we have
-    this.loadedAt = Date.now();
+    // loadedAt is stamped last (even when the body turns out corrupt): "not cold" is what the
+    // request path reads as "rules in place", and another request runs on the event loop while
+    // the body is awaited, so it must not see "not cold" before the matcher and config are set.
+    try { await this.publish(res); } finally { this.loadedAt = Date.now(); }
+  }
+
+  private async publish(res: Response): Promise<void> {
     this.readConfig(res);
     if (res.status === 304) return;
     if (res.status === 204) { this.matcher = null; this.etag = null; return; }   // no snapshot published: enforce nothing
