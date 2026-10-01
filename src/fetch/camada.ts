@@ -73,6 +73,7 @@ export interface FetchVars {
   scriptPath: string;
   waitUntil: WaitUntil;
   facts: Facts;
+  t0: number;                     // Date.now() when `before()` started: `after()` ships `dur` = now - t0 (ms), @camada/node's semantics
 }
 
 export type BeforeResult = { response: Response; vars?: undefined } | { response?: undefined; vars: FetchVars } | null;
@@ -266,6 +267,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
   async function before(req: Request, ctx: FetchRequestContext = {}): Promise<BeforeResult> {
     // Reading the env and building the engine are inside the guard too: a host env can carry
     // non-string bindings, and a throw here would 5xx the app on its very first request.
+    const t0 = Date.now();
     const env = guarded(() => ({ ...ctx.env, ...opts.env }), {} as Record<string, string | undefined>);
     const eng = guarded(() => (env.CAMADA_DISABLED === '1' ? null : ensure(env)), null);
     if (!eng) return null;
@@ -329,7 +331,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       const mintedSid = sid ?? crypto.randomUUID();
       const secure = url.protocol === 'https:' ? '; Secure' : '';
       const sessionCookie = newSession ? `${SESSION_COOKIE}=${mintedSid}; Path=/; Max-Age=${SESSION_MAX_AGE}; HttpOnly; SameSite=Lax${secure}` : null;
-      return { vars: { eng, rid: crypto.randomUUID(), sid: mintedSid, newSession, sessionCookie, ip, warnRule, scriptPath, waitUntil, facts } };
+      return { vars: { eng, rid: crypto.randomUUID(), sid: mintedSid, newSession, sessionCookie, ip, warnRule, scriptPath, waitUntil, facts, t0 } };
     }, undefined);
 
     // The guard threw before deciding: let the app run and still ship its event, with fresh ids
@@ -337,7 +339,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     // or its attribution (@camada/hono's rule). No session is minted: nothing was decided.
     if (answered) return answered;
     const ip = guarded(() => clientIp(eng, req, ctx), null);
-    return { vars: { eng, rid: crypto.randomUUID(), sid: null, newSession: false, sessionCookie: null, ip, warnRule: null, scriptPath, waitUntil, facts } };
+    return { vars: { eng, rid: crypto.randomUUID(), sid: null, newSession: false, sessionCookie: null, ip, warnRule: null, scriptPath, waitUntil, facts, t0 } };
   }
 
   function after(req: Request, vars: FetchVars, status: number | null): void {
@@ -350,6 +352,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       if (Math.random() >= (cfg?.sample ?? 1)) return;
       const ev = buildEvent(req, path, url.search, vars.ip, vars.sid, vars.facts, vars.rid, vars.newSession);
       ev.st = status;
+      ev.dur = Math.max(0, Date.now() - vars.t0);   // request start → response settled; never null once a request was captured
       if (vars.warnRule) ev.wrn = vars.warnRule;   // §D3: the warn rule that let this request through
       ship(eng, ev, vars.waitUntil);
     }, undefined);
