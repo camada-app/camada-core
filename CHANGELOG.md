@@ -39,3 +39,6 @@
 - Under `@hono/node-server`, a copied response gets headers of its own, so the session cookie can
   be added to a `fetch()` result.
 - The exit flush no longer throws `NotCapable` on Deno without `--allow-run`.
+- `SnapshotClient` stays cold until the first snapshot is in place. It used to report "loaded"
+  while the body was still being read, so a request served meanwhile failed open with no reason
+  instead of `cold`.
