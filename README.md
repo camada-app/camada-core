@@ -67,8 +67,19 @@ const cam = createFetchCamada({ tap: TAP_BUN, sdk: '@camada/bun/0.1.0', iife }, 
 const r = await cam.before(req, { peer, waitUntil, env });   // { response } | { vars } | null (inert)
 if (r?.response) return r.response;                          // 403, the challenge, the beacon endpoints
 const res = await app(req);                                  // keep r.vars in the framework's per-request slot
-if (r) { cam.after(req, r.vars, res.status); return r.vars.sessionCookie ? withSetCookie(res, r.vars.sessionCookie) : res; }
+if (r) return cam.finish(req, r.vars, r.vars.sessionCookie ? withSetCookie(res, r.vars.sessionCookie) : res);
 ```
+
+`finish()` returns the response with its body re-wrapped in a pass-through stream and ships the
+event when the last chunk has been sent, the client cancelled, or the body errored. So `dur`
+(request start to settle, in ms) covers a streamed body, not just its first byte, and nothing is
+buffered. On Workers-class hosts a promise that settles with the body goes to the adapter's
+`waitUntil` up front (workerd stops pumping an abandoned body otherwise, with no close and no
+cancel), and the flush rides it too. A HEAD or a body-less response ships at once. `after(req, vars,
+status)` ships immediately where the adapter only knows a status (a thrown handler, a websocket
+upgrade); `status: null` means the response was not seen, so `st` and `dur` both ship null.
+`onBodyDone(res, done, { method, waitUntil })` from the main entry is the same body wrapper, for pipelines of
+their own (`@camada/hono`).
 
 The client address is an already-resolved `ip` the host vouches for, else the socket `peer`
 and `X-Forwarded-For` under the trusted-proxy rules — never a bare header. `track(vars, …)` and
