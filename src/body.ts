@@ -17,17 +17,27 @@
 // `text/event-stream` with no Content-Length is a JS stream the host already sends chunked, and
 // wrapping it leaves the status and headers byte-identical (checked on workerd, Bun and Deno).
 //
-// On Workers the body must also be kept alive: when the client disconnects mid-stream, workerd
-// keeps pumping the body only while the request has a pending `waitUntil`, and otherwise drops it
-// with no close and no cancel, so `done` would never run. A promise that settles with `done` goes
-// to `waitUntil` up front.
+// On workerd a JS stream cannot see the client leave: after a disconnect the runtime neither pulls
+// nor cancels it (wrangler 4.128+), so a pass-through wrapper would never call `done`, and a
+// `waitUntil` promise waiting on it has no I/O behind it, which workerd reports as "your Worker's
+// code had hung" and cancels, the event lost. There the body is piped through the native
+// IdentityTransformStream instead: its writable errors once the client is gone, the pipe cancels
+// the source (a proxied upstream closes one chunk behind camada-off, which notices on its own next
+// write), and the pipe's promise, settled by I/O, is what `waitUntil` holds. With the
+// `enable_request_signal` flag, `request.signal` cancels it at once.
 
 export interface BodyDoneOptions {
   /** The request method: a HEAD's body is discarded unread, so it is done at once. */
   method?: string;
   /** The host's waitUntil, where the isolate must be held open until the body is done (Workers). */
   waitUntil?: (p: Promise<unknown>) => void;
+  /** The request's signal: on workerd it aborts on a client disconnect (`enable_request_signal`).
+   *  Read only on workerd, so a caller may pass it as a getter. */
+  signal?: AbortSignal;
 }
+
+// workerd's native identity stream; absent on every other runtime.
+type Its = new () => TransformStream<Uint8Array, Uint8Array>;
 
 /** True for a response whose body is a stream worth waiting for: an explicit server-sent-events
  *  body of unknown length. Reads the method, status and headers only, never `res.body`. */
@@ -49,11 +59,20 @@ export function onBodyDone(res: Response, done: () => void, opts: BodyDoneOption
   if (!isStreamed(res, opts.method)) { done(); return res; }
   const src = res.body;
   if (!src || res.bodyUsed) { done(); return res; }
+  const ITS = (globalThis as { IdentityTransformStream?: Its }).IdentityTransformStream;
+  if (ITS) {
+    if (src.locked) throw new TypeError('locked body');   // pipeTo would reject and leave the copy open forever
+    const ts = new ITS();
+    // pipeTo settles once, on the end, a client disconnect or a source error; `done` runs then.
+    const piped = src.pipeTo(ts.writable, { signal: opts.signal }).then(done, done);
+    opts.waitUntil?.(piped);
+    return copyResponse(res, ts.readable);
+  }
   let fired = false;
   let settle = () => {};
   const fire = () => { if (!fired) { fired = true; done(); settle(); } };
   const reader = src.getReader();
-  // ponytail: a body the host drops unread (never closed, never cancelled) holds this until the platform's waitUntil limit (30 s on Workers).
+  // ponytail: a body the host drops unread (never closed, never cancelled) holds this until the platform's waitUntil limit; Node, Bun and Deno cancel a body the client left.
   opts.waitUntil?.(new Promise<void>((r) => { settle = r; }));
   const body = new ReadableStream<Uint8Array>({
     async pull(ctrl) {
