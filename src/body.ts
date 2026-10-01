@@ -83,7 +83,10 @@ export function onBodyDone(res: Response, done: () => void, opts: BodyDoneOption
  * Deno <= 2.6 strips them at fetch() time already; Bun, Node and workerd copy faithfully as is.
  */
 export function copyResponse(res: Response, body: BodyInit | null): Response {
-  const out = new Response(body, res);
+  let out = new Response(body, res);
+  // @hono/node-server's global Response keeps the init's own Headers object for a stream body,
+  // and a fetch() result's is immutable: the copy could not take a header. Give it its own.
+  if (out.headers === res.headers) out = new Response(body, { status: res.status, statusText: res.statusText, headers: new Headers(res.headers) });
   if (denoBodyDecoded(res)) {
     out.headers.delete('content-encoding');
     out.headers.delete('content-length');
