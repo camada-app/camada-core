@@ -7,7 +7,7 @@
 // A second tsup entry: in the CJS build shared modules are duplicated per entry, so the rate
 // limiter behind `logRateLimited` is per-entry there. Harmless — it only spaces log lines.
 export {
-  createFetchCamada, track, scriptTag, withSetCookie, SESSION_COOKIE, SESSION_MAX_AGE,
+  createFetchCamada, track, scriptTag, withSetCookie, withRid, SESSION_COOKIE, SESSION_MAX_AGE,
   type FetchCamada, type FetchIdentity, type FetchRequestContext, type FetchVars, type BeforeResult, type Engine, type WaitUntil,
 } from './fetch/camada.js';
 export { type FetchCamadaOptions, type ResolvedFetchEnv } from './fetch/env.js';
