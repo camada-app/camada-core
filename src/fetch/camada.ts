@@ -134,7 +134,7 @@ export function withSetCookie(res: Response, cookie: string): Response {
 
 /** Sets `x-rid` (the rid of this request's event row, so support can find it from a response) on
  *  the response, or on a faithful copy when its headers are immutable. Never on a 101 handshake. */
-export function withRid(res: Response, vars: FetchVars): Response {
+export function withRid(res: Response, vars: Pick<FetchVars, 'rid'>): Response {
   if (res.status === 101) return res;
   try {
     res.headers.set('x-rid', vars.rid);
