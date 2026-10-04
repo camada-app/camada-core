@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 (unreleased; follows 0.4.0)
+## 0.5.0 (2026-10-04; follows 0.4.0)
 
 ### Added
 
