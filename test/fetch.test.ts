@@ -283,6 +283,34 @@ describe('capture', () => {
     expect(await out.text()).toBe('chunk1;');
   });
 
+  it('keeps cancel propagation, one event, status and cookies for an immutable-header SSE (a proxied fetch())', async () => {
+    const a = await primed();
+    const req = new Request('http://app.test/proxied-sse');
+    const r = await a.cam.before(req, ip('8.8.8.8'));
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(ctrl) { ctrl.enqueue(new TextEncoder().encode('data: x\n\n')); },
+      cancel() { cancelled = true; },
+    });
+    const res = new Response(body, { status: 203, headers: { 'content-type': 'text/event-stream' } });
+    res.headers.append('set-cookie', 'a=1');
+    res.headers.append('set-cookie', 'b=2');
+    for (const m of ['set', 'append', 'delete'] as const) Object.defineProperty(res.headers, m, { value: () => { throw new TypeError('immutable'); } });
+    const waits: Promise<unknown>[] = [];
+    const out = a.cam.finish(req, r!.vars!, res);
+    const reader = out.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    await vi.waitFor(() => expect(cancelled).toBe(true));
+    r!.vars!.eng.queue.flush((p) => { waits.push(p); });
+    await Promise.all(waits);
+    expect(out.status).toBe(203);
+    expect(out.headers.getSetCookie()).toEqual(['a=1', 'b=2']);
+    expect(out.headers.get('x-rid')).toBe(r!.vars!.rid);
+    expect(events.filter((e) => e.p === '/proxied-sse')).toHaveLength(1);
+    expect(events.find((e) => e.p === '/proxied-sse')!.rid).toBe(out.headers.get('x-rid'));
+  });
+
   it('ships a 404 as the app answered it, and st null where the host cannot see the status', async () => {
     const a = await primed();
     await call(a, '/nope');
