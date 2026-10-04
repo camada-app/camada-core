@@ -118,32 +118,29 @@ function ship(e: Engine, ev: unknown, waitUntil: WaitUntil): void {
   e.queue.flush(waitUntil);
 }
 
-/** Appends a `set-cookie` to a response in place, or rebuilds it when its headers are immutable
- *  (`Response.redirect()`, a `fetch()` result). Either way the client gets the same status, body
- *  bytes, Content-Encoding and Content-Length it would have got without the cookie (see copyResponse). */
-export function withSetCookie(res: Response, cookie: string): Response {
+/** Edits `res.headers` in place, or on a faithful copy (see copyResponse) when its headers are
+ *  immutable (`Response.redirect()`, a `fetch()` result). The client gets the same status, body
+ *  bytes, Content-Encoding and Content-Length it would have got without the edit. */
+function editHeaders(res: Response, edit: (h: Headers) => void): Response {
   try {
-    res.headers.append('set-cookie', cookie);
+    edit(res.headers);
     return res;
   } catch {
     const out = copyResponse(res, res.body);
-    out.headers.append('set-cookie', cookie);
+    edit(out.headers);
     return out;
   }
+}
+
+/** Appends a `set-cookie` to a response (or its immutable-headers copy). */
+export function withSetCookie(res: Response, cookie: string): Response {
+  return editHeaders(res, (h) => h.append('set-cookie', cookie));
 }
 
 /** Sets `x-rid` (the rid of this request's event row, so support can find it from a response) on
  *  the response, or on a faithful copy when its headers are immutable. Never on a 101 handshake. */
 export function withRid(res: Response, vars: Pick<FetchVars, 'rid'>): Response {
-  if (res.status === 101) return res;
-  try {
-    res.headers.set('x-rid', vars.rid);
-    return res;
-  } catch {
-    const out = copyResponse(res, res.body);
-    out.headers.set('x-rid', vars.rid);
-    return out;
-  }
+  return res.status === 101 ? res : editHeaders(res, (h) => h.set('x-rid', vars.rid));
 }
 
 /**
