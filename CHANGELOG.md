@@ -11,6 +11,10 @@
   the app's response and it ships the event (see `dur` below). `after(req, vars, status)` is still
   there for paths that only know a status, such as a thrown handler or a WebSocket upgrade.
 
+- `@camada/core/fetch`: `finish()` sets `x-rid` (the rid of the request's event row) on the
+  response, or on a faithful copy when its headers are immutable. Never on a 101. Exported as
+  `withRid(res, vars)` for adapters that do not go through `finish()`.
+
 ### Changed
 
 - `ts` is the request start, so `[ts, ts + dur]` is when the request ran. It used to be stamped

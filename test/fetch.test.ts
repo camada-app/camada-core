@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { CHALLENGE_COOKIE, TAP_BUN } from '../src/index.js';
-import { createFetchCamada, track, scriptTag, withSetCookie, type FetchCamada, type FetchCamadaOptions, type FetchIdentity, type FetchRequestContext, type FetchVars } from '../src/fetch.js';
+import { createFetchCamada, track, scriptTag, withSetCookie, withRid, type FetchCamada, type FetchCamadaOptions, type FetchIdentity, type FetchRequestContext, type FetchVars } from '../src/fetch.js';
 
 const FIX = fileURLToPath(new URL('./fixtures/blk3/', import.meta.url));
 const FIX5 = fileURLToPath(new URL('./fixtures/blk5/', import.meta.url));
@@ -236,7 +236,6 @@ describe('capture', () => {
       ['css', sealed(new Response(new Blob(['a{}'], { type: 'text/css' })))],
       ['stream', sealed(new Response(slowBody(1, 1)))],
       ['length', sealed(new Response('data: x\n\n', { headers: { ...sse, 'content-length': '10' } }))],
-      ['redirect', sealed(Response.redirect('http://app.test/', 302))],
       ['cookie', sealed(new Response('', { status: 200, headers: { 'set-cookie': 'a=1' } }))],
       ['no-content', sealed(new Response(null, { status: 204, headers: sse }))],
       ['not-modified', sealed(new Response(null, { status: 304, headers: sse }))],
@@ -251,7 +250,27 @@ describe('capture', () => {
     await vi.waitFor(() => expect(events.length).toBe(cases.length));   // and each one shipped, once, at return
   });
 
-  it('wraps an SSE body with the same status and headers', async () => {
+  it('sets x-rid to the event rid, on a faithful copy when the headers are immutable, and never on a 101 or a block', async () => {
+    const a = await primed();
+    const ok = await call(a, '/cart');
+    expect(ok.headers.get('x-rid')).toBe(a.lastVars!.rid);
+    expect(events.at(-1)!.rid).toBe(ok.headers.get('x-rid'));
+    const redirect = await call(a, '/redirect');   // Response.redirect(): immutable headers
+    expect(redirect.status).toBe(302);
+    expect(redirect.headers.get('location')).toBe('http://app.test/');
+    expect(redirect.headers.get('x-rid')).toBe(a.lastVars!.rid);
+    const sse = await call(a, '/stream');   // wrapped body keeps it
+    expect(sse.headers.get('x-rid')).toBe(a.lastVars!.rid);
+    const req = new Request('http://app.test/ws');
+    const r = await a.cam.before(req, ip('8.8.8.8'));
+    const up = { status: 101, headers: new Headers() } as unknown as Response;
+    expect(withRid(up, r!.vars!)).toBe(up);
+    expect(up.headers.has('x-rid')).toBe(false);
+    const beacon = await call(a, '/_cam/b.js');   // camada's own answer
+    expect(beacon.headers.has('x-rid')).toBe(false);
+  });
+
+  it('wraps an SSE body with the same status and headers apart from x-rid', async () => {
     const a = await primed();
     const req = new Request('http://app.test/events');
     const r = await a.cam.before(req, ip('8.8.8.8'));
@@ -259,7 +278,8 @@ describe('capture', () => {
     const out = a.cam.finish(req, r!.vars!, res);
     expect(out).not.toBe(res);
     expect(out.status).toBe(200);
-    expect([...out.headers]).toEqual([...res.headers]);
+    expect([...out.headers]).toEqual([...res.headers]);   // x-rid went onto res itself: the wrap copies it
+    expect(out.headers.get('x-rid')).toBe(r!.vars!.rid);
     expect(await out.text()).toBe('chunk1;');
   });
 
