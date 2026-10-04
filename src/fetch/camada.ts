@@ -92,7 +92,7 @@ export interface FetchCamada {
   /** The usual end of a request: returns the response to send. A server-sent-events body is
    *  wrapped so the event ships once its last byte has gone out (or the client left) and `dur`
    *  covers the stream; any other response is returned as it is and ships now (`dur` = time to
-   *  first byte). Never changes the status or headers, never buffers, never throws. */
+   *  first byte). Adds `x-rid` (see withRid), never changes the status, never buffers, never throws. */
   finish(req: Request, vars: FetchVars, res: Response): Response;
   /** Test/reset hook: stops and drops every cached engine. */
   reset(): void;
@@ -128,6 +128,20 @@ export function withSetCookie(res: Response, cookie: string): Response {
   } catch {
     const out = copyResponse(res, res.body);
     out.headers.append('set-cookie', cookie);
+    return out;
+  }
+}
+
+/** Sets `x-rid` (the rid of this request's event row, so support can find it from a response) on
+ *  the response, or on a faithful copy when its headers are immutable. Never on a 101 handshake. */
+export function withRid(res: Response, vars: FetchVars): Response {
+  if (res.status === 101) return res;
+  try {
+    res.headers.set('x-rid', vars.rid);
+    return res;
+  } catch {
+    const out = copyResponse(res, res.body);
+    out.headers.set('x-rid', vars.rid);
     return out;
   }
 }
@@ -376,6 +390,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
   function finish(req: Request, vars: FetchVars, res: Response): Response {
     const status = res.status;
     try {
+      res = withRid(res, vars);   // a copy only when the headers are immutable; a 101 and a locked body fall through untouched
       return onBodyDone(res, () => after(req, vars, status), { method: req.method, waitUntil: vars.waitUntil, get signal() { return req.signal; } });   // read on workerd only
     } catch (err) {
       logRateLimited(err);   // a locked or foreign body: ship now (time to first byte) and send the response untouched
