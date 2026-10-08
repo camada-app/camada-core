@@ -4,11 +4,12 @@
 //   304  nothing changed; config headers repeated (config refreshes every poll for free)
 //   204  authenticated, no snapshot published -> enforce nothing, fail open
 // Semantics ported exactly: single-in-flight load; loadedAt stamped last, even on 204 (retry per
-// poll cadence, not per request); any error keeps the previous snapshot; cold = fail open.
+// poll cadence, not per request); any error keeps the previous snapshot and paces the next poll (backoff.ts); cold = fail open.
 
 import { parseSnapshot, type SnapshotMeta, type RuleAction } from './parse.js';
 import { Matcher, type MatchInput, type MatchReason } from './match.js';
 import type { CamadaRemoteConfig } from '../config.js';
+import { nextPollDelay } from './backoff.js';
 import { logRateLimited } from '../guarded.js';
 import { DEFAULT_REFRESH_MS, DEFAULT_SNAPSHOT_VERSION, type SnapshotVersion } from '../constants.js';
 
@@ -49,6 +50,7 @@ export class SnapshotClient {
   private refreshMs: number;
   private readonly pinned: boolean;   // an explicit refreshMs option wins over the server's poll_seconds
   private loadedAt = 0;
+  private notBefore = 0;   // ms: after a failed poll, no self-initiated poll before this (0 = open)
   private loading: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly opts: Required<Omit<SnapshotClientOptions, 'fetchImpl' | 'sdk'>> & { fetchImpl: typeof fetch; sdk?: string };
@@ -84,9 +86,25 @@ export class SnapshotClient {
    *  Staleness uses 0.9×refreshMs so a timer tick arriving at ~refreshMs-ε still refreshes —
    *  a full-interval comparison makes every other tick a no-op (effective cadence 2×). */
   ensureFresh(waitUntil?: (p: Promise<unknown>) => void): void {
-    if (this.loading || Date.now() - this.loadedAt <= this.refreshMs * 0.9) return;
+    if (this.loading || !this.due()) return;
     this.loading = this.load().catch(logRateLimited).finally(() => { this.loading = null; });   // a poll that can never succeed must not be silent (finding 030)
     waitUntil?.(this.loading);
+  }
+
+  /** Stale: never loaded, or older than 0.9×refresh (a loadedAt in the future means the clock stepped back). */
+  private stale(now: number): boolean {
+    return !this.loadedAt || this.loadedAt > now || now - this.loadedAt > this.refreshMs * 0.9;
+  }
+
+  /** Stale and past the failure gate. A gate further out than one refresh can only be a backward clock step: open. */
+  private due(): boolean {
+    const now = Date.now();
+    return this.stale(now) && (now >= this.notBefore || this.notBefore - now > this.refreshMs);
+  }
+
+  /** Failed poll (status 0 = no answer): keep everything, hold the next self-initiated poll back. */
+  private fail(status: number, retryAfter: string | null): void {
+    this.notBefore = Date.now() + (nextPollDelay(status, retryAfter, this.refreshMs / 1000) ?? 0) * 1000;
   }
 
   private async load(): Promise<void> {
@@ -95,8 +113,19 @@ export class SnapshotClient {
     if (this.opts.sdk) headers['x-camada-sdk'] = this.opts.sdk;
     if (this.opts.snapshotVersion > 3) headers['x-camada-snapshot'] = String(this.opts.snapshotVersion);   // a tenant without that container is answered with the next one down
     const get = this.opts.fetchImpl;   // a local, so the call has no receiver even if a caller handed us a bare global
-    const res = await get(this.opts.url, { headers, signal: AbortSignal.timeout(this.opts.fetchTimeoutMs) });
-    if (res.status !== 200 && res.status !== 204 && res.status !== 304) return;   // 401/5xx: keep what we have
+    let res: Response;
+    try {
+      res = await get(this.opts.url, { headers, signal: AbortSignal.timeout(this.opts.fetchTimeoutMs) });
+    } catch (e) {
+      this.fail(0, null);   // timeout, ECONNREFUSED...: no answer. Rethrown so logRateLimited still logs it
+      throw e;
+    }
+    if (res.status !== 200 && res.status !== 204 && res.status !== 304) {   // 401/5xx: keep what we have, pace the next poll
+      this.fail(res.status, res.headers.get('retry-after'));
+      void res.body?.cancel().catch(() => {});   // free the connection; edge-analyst's 401 carries a body
+      return;
+    }
+    this.notBefore = 0;
     // loadedAt is stamped last (even when the body turns out corrupt): "not cold" is what the
     // request path reads as "rules in place", and another request runs on the event loop while
     // the body is awaited, so it must not see "not cold" before the matcher and config are set.

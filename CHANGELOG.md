@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `SnapshotClient` no longer re-polls back to back when `/snapshot` fails. On any answer other than
+  200, 204 or 304 (and on a thrown fetch), it keeps its blocks and holds the next self-initiated
+  poll back by max(`retry-after`, 5 s), capped at the refresh interval. Explicit `refresh` is not
+  gated. The failed response body is now cancelled, and a backward clock step no longer stalls
+  polling. (camada-all-pbv9)
+
 ## 0.5.0 (2026-10-04; follows 0.4.0)
 
 ### Added
