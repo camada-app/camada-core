@@ -279,3 +279,90 @@ describe('format switch', () => {
     await vi.waitFor(() => expect(c.matcher?.snap.format).toBe(4));
   });
 });
+
+describe('poll pacing (camada-all-pbv9)', async () => {
+  const { nextPollDelay } = await import('../src/snapshot/backoff.js');
+  type Step = { t: number; poll: boolean; respond?: { status: number; retryAfter?: string }; after?: { cold: boolean; blocked: boolean } };
+  const fx = JSON.parse(readFileSync(new URL('./fixtures/poll/backoff.json', import.meta.url), 'utf8')) as {
+    blockedIp: string;
+    delay: { name: string; status: number; retryAfter: string | null; refreshSeconds: number; expectDelaySeconds: number | null }[];
+    timelines: { name: string; refreshSeconds: number; clockBase: number; steps: Step[] }[];
+  };
+
+  for (const d of fx.delay) {
+    it(`delay: ${d.name}`, () => {
+      const got = nextPollDelay(d.status, d.retryAfter, d.refreshSeconds);
+      if (d.expectDelaySeconds === null) expect(got).toBeNull();
+      else expect(Math.abs((got as number) - d.expectDelaySeconds)).toBeLessThan(1e-9);
+    });
+  }
+
+  for (const tl of fx.timelines) {
+    it(`timeline: ${tl.name}`, async () => {
+      vi.useFakeTimers();
+      try {
+        let calls = 0;
+        let next: { status: number; retryAfter?: string } = { status: 200 };
+        const fetchImpl = (async () => {
+          calls++;
+          if (next.status === 0) throw new TypeError('fetch failed');
+          if (next.status === 200) return ok200();
+          // a failed answer must not be read for config: send a different poll_seconds and assert it is ignored
+          const headers: Record<string, string> = { 'x-camada-config': next.status === 204 || next.status === 304 ? CONFIG : CONFIG.replace('"poll_seconds":30', '"poll_seconds":90') };
+          if (next.retryAfter !== undefined) headers['retry-after'] = next.retryAfter;
+          return new Response(next.status === 204 || next.status === 304 ? null : 'x', { status: next.status, headers });
+        }) as typeof fetch;
+        const c = new SnapshotClient({ url: 'https://a.test/snapshot', token: 'st', mode: 'lazy', refreshMs: tl.refreshSeconds * 1000, fetchImpl });
+        for (const s of tl.steps) {
+          vi.setSystemTime((tl.clockBase + s.t) * 1000);
+          const before = calls;
+          if (s.respond) next = s.respond;
+          const waits: Promise<unknown>[] = [];
+          c.ensureFresh((p) => waits.push(p));
+          await Promise.all(waits);
+          expect(calls > before, `${tl.name} t=${s.t} poll`).toBe(s.poll);
+          expect(c.config?.poll_seconds, `${tl.name} t=${s.t} config from a failed answer`).not.toBe(90);
+          if (s.after) {
+            expect(c.verdict({ ip: fx.blockedIp }).reason === 'cold', `t=${s.t} cold`).toBe(s.after.cold);
+            expect(c.verdict({ ip: fx.blockedIp }).block, `t=${s.t} blocked`).toBe(s.after.blocked);
+          }
+        }
+      } finally { vi.useRealTimers(); }
+    });
+  }
+
+  it('cancels the body of a failed answer', async () => {
+    let cancelled = false;
+    const body = new ReadableStream({ start(ctl) { ctl.enqueue(new TextEncoder().encode('x')); }, cancel() { cancelled = true; } });
+    const fetchImpl = (async () => new Response(body, { status: 503, headers: { 'retry-after': '30' } })) as typeof fetch;
+    const c = new SnapshotClient({ url: 'https://a.test/snapshot', token: 'st', mode: 'lazy', refreshMs: 30_000, fetchImpl });
+    const w: Promise<unknown>[] = [];
+    c.ensureFresh((p) => w.push(p));
+    await Promise.all(w);
+    expect(cancelled).toBe(true);
+  });
+
+  it('treats a gate or loadedAt in the future as a backward clock step (polls again)', async () => {
+    vi.useFakeTimers();
+    try {
+      let status = 200;
+      let calls = 0;
+      const fetchImpl = (async () => { calls++; return status === 200 ? ok200() : new Response('x', { status, headers: { 'retry-after': '30' } }); }) as typeof fetch;
+      const c = new SnapshotClient({ url: 'https://a.test/snapshot', token: 'st', mode: 'lazy', refreshMs: 30_000, fetchImpl });
+      vi.setSystemTime(1_000_000);
+      const go = async () => { const w: Promise<unknown>[] = []; c.ensureFresh((p) => w.push(p)); await Promise.all(w); };
+      await go();
+      expect(calls).toBe(1);
+      vi.setSystemTime(1_000_000 - 3_600_000);   // clock stepped back an hour: loadedAt is in the future
+      await go();
+      expect(calls).toBe(2);
+      status = 503;
+      vi.setSystemTime(1_000_000 + 40_000);
+      await go();   // fails: gate = now + 30 s
+      expect(calls).toBe(3);
+      vi.setSystemTime(1_000_000 + 40_000 - 3_600_000);   // gate now an hour ahead: > refresh, so open (and loadedAt is in the future too)
+      await go();
+      expect(calls).toBe(4);
+    } finally { vi.useRealTimers(); }
+  });
+});
