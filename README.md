@@ -41,7 +41,8 @@ Those depend on it, so `npm install` of any of them brings it along.
   not matching, so a header rule is enforced by v5 SDKs only.
 - **`SnapshotClient`** — polls `GET /snapshot` (Bearer snapshot token) every 30 s off the
   request path with `If-None-Match`; 304 keeps the snapshot and still refreshes tenant config;
-  204 means "nothing published" (enforce nothing); any error keeps the previous snapshot.
+  204 means "nothing published" (enforce nothing); any error keeps the previous snapshot and paces the next poll
+  (max(`retry-after`, 5 s), capped at the refresh interval).
   `snapshotVersion` is 3 | 4 | 5 (default 5, sent as `x-camada-snapshot`); a tenant whose
   analyst has not published that container is answered with the next one down.
   `timer` mode for long-lived Node processes, `lazy` mode for serverless/edge (`ensureFresh`
@@ -120,7 +121,7 @@ lazy. The full pipeline is contracts.md §D.
 
 ## Conformance fixtures
 
-`test/fixtures/` is copied from `edge-analyst/fixtures/` (`npm run fixtures` there): the
+`test/fixtures/` is copied from `edge-analyst/fixtures/` (`npm run fixtures` there), except `poll/`, which core owns (the snapshot poll pacing fixture the server SDKs also read): the
 expected match results are computed by running the reference `blocklist.js` itself. `blk3/`
 holds v3 + v4, `blk5/` holds v5 with its ordered custom rules (`rules.json` is the tenant list
 behind the container). Re-copy whenever the BLK format, the rule vocabulary or the HDRS order
