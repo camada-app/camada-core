@@ -307,7 +307,8 @@ describe('poll pacing (camada-all-pbv9)', async () => {
           calls++;
           if (next.status === 0) throw new TypeError('fetch failed');
           if (next.status === 200) return ok200();
-          const headers: Record<string, string> = { 'x-camada-config': CONFIG };
+          // a failed answer must not be read for config: send a different poll_seconds and assert it is ignored
+          const headers: Record<string, string> = { 'x-camada-config': next.status === 204 || next.status === 304 ? CONFIG : CONFIG.replace('"poll_seconds":30', '"poll_seconds":90') };
           if (next.retryAfter !== undefined) headers['retry-after'] = next.retryAfter;
           return new Response(next.status === 204 || next.status === 304 ? null : 'x', { status: next.status, headers });
         }) as typeof fetch;
@@ -320,6 +321,7 @@ describe('poll pacing (camada-all-pbv9)', async () => {
           c.ensureFresh((p) => waits.push(p));
           await Promise.all(waits);
           expect(calls > before, `${tl.name} t=${s.t} poll`).toBe(s.poll);
+          expect(c.config?.poll_seconds, `${tl.name} t=${s.t} config from a failed answer`).not.toBe(90);
           if (s.after) {
             expect(c.verdict({ ip: fx.blockedIp }).reason === 'cold', `t=${s.t} cold`).toBe(s.after.cold);
             expect(c.verdict({ ip: fx.blockedIp }).block, `t=${s.t} blocked`).toBe(s.after.blocked);
@@ -328,6 +330,17 @@ describe('poll pacing (camada-all-pbv9)', async () => {
       } finally { vi.useRealTimers(); }
     });
   }
+
+  it('cancels the body of a failed answer', async () => {
+    let cancelled = false;
+    const body = new ReadableStream({ start(ctl) { ctl.enqueue(new TextEncoder().encode('x')); }, cancel() { cancelled = true; } });
+    const fetchImpl = (async () => new Response(body, { status: 503, headers: { 'retry-after': '30' } })) as typeof fetch;
+    const c = new SnapshotClient({ url: 'https://a.test/snapshot', token: 'st', mode: 'lazy', refreshMs: 30_000, fetchImpl });
+    const w: Promise<unknown>[] = [];
+    c.ensureFresh((p) => w.push(p));
+    await Promise.all(w);
+    expect(cancelled).toBe(true);
+  });
 
   it('treats a gate or loadedAt in the future as a backward clock step (polls again)', async () => {
     vi.useFakeTimers();
