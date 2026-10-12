@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "doc": "An event built with Referer header `referer` (null = header absent) must carry `ref` exactly; no string in `absent` may appear anywhere in the serialized event. Contract: sdk-conformance.md (C6).",
   "cases": [
     {
@@ -202,7 +202,7 @@
       "absent": [
         "abc123"
       ],
-      "note": "a decoded value containing '?' or '=' is replaced whole"
+      "note": "a decoded value holding '?', '&' or '=' is split on [?&]; it is replaced whole when any segment is a credential"
     },
     {
       "id": "nested-query-encoded",
@@ -256,8 +256,8 @@
       "id": "value-with-equals",
       "ticket": "ijsa",
       "referer": "https://app.test/search?q=a%3Db",
-      "ref": "https://app.test/search?q=~r",
-      "note": "the cost of the nested rule: any value that decodes to contain '=' or '?' is dropped"
+      "ref": "https://app.test/search?q=a%3Db",
+      "note": "v3: a nested value is replaced only when one of its [?&]-segments is a credential; 'a=b' is not"
     },
     {
       "id": "plain-path-value-kept",
@@ -278,6 +278,108 @@
       "referer": "https://app.test/login?next=%252525253F",
       "ref": "https://app.test/login?next=~r",
       "note": "decoding stops after 4 passes; a part that still holds a %HH escape is scrubbed"
+    },
+    {
+      "id": "sqli-quote-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=1' or '1'='1",
+      "ref": "https://app.test/s?q=1' or '1'='1",
+      "note": "v3: attack payloads stay visible to the analyst scorer"
+    },
+    {
+      "id": "sqli-encoded-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=1%27%20or%20%271%27%3D%271",
+      "ref": "https://app.test/s?q=1%27%20or%20%271%27%3D%271"
+    },
+    {
+      "id": "xss-svg-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=<svg onload=alert(1)>",
+      "ref": "https://app.test/s?q=<svg onload=alert(1)>"
+    },
+    {
+      "id": "question-mark-value-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=what%3F",
+      "ref": "https://app.test/s?q=what%3F"
+    },
+    {
+      "id": "nested-state-then-code",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?u=https%3A%2F%2Fb%2Fcb%3Fstate%3D1%26code%3Dsecret77",
+      "ref": "https://app.test/s?u=~r",
+      "absent": [
+        "secret77"
+      ],
+      "note": "segments: https://b/cb, state=1, code=secret77 (credential name)"
+    },
+    {
+      "id": "nested-encoded-amp-jwt",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?x=foo%26eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sigsig",
+      "ref": "https://app.test/s?x=~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sigsig"
+      ],
+      "note": "segment after the decoded & is a JWT"
+    },
+    {
+      "id": "nested-lowercase-escapes",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?next=%2freset%3ftoken%3dabc123",
+      "ref": "https://app.test/s?next=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "hex digits of %HH in either case"
+    },
+    {
+      "id": "bare-part-nested",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?foo%26token%3Dabc123",
+      "ref": "https://app.test/s?~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "a bare part gets the same nested test"
+    },
+    {
+      "id": "b64-plus-slash",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?x=ab+/ab+/ab+/ab+/ab+/ab+/ab+/ab+/ab+/ab+/",
+      "ref": "https://app.test/s?x=~r",
+      "absent": [
+        "ab+/ab+/ab+/"
+      ],
+      "note": "no '+' to space: '+' is a base64 character"
+    },
+    {
+      "id": "invalid-utf8-ff-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=%FF",
+      "ref": "https://app.test/s?q=%FF",
+      "note": "decode is bytewise (Latin-1), never a UTF-8 decoder that throws or substitutes"
+    },
+    {
+      "id": "invalid-utf8-sequence-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=%C3%28",
+      "ref": "https://app.test/s?q=%C3%28"
+    },
+    {
+      "id": "hex-trailing-newline-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?x=a1b2c3d4e5f60718293a4b5c6d7e8f90%0A",
+      "ref": "https://app.test/s?x=a1b2c3d4e5f60718293a4b5c6d7e8f90%0A",
+      "note": "whole-string anchors: a trailing newline does not satisfy the end anchor"
+    },
+    {
+      "id": "ascii-only-case-fold",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?ſig=abc123&Key=abc123",
+      "ref": "https://app.test/s?ſig=abc123&Key=abc123",
+      "note": "case-insensitive matching is ASCII-only: U+017F and U+212A do not match s and k"
     }
   ]
 }

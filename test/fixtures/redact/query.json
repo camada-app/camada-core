@@ -1,0 +1,262 @@
+{
+  "version": 3,
+  "doc": "An event built for a request whose raw query string (leading '?' included, or empty) is `query` must carry `q` exactly; no string in `absent` may appear in the serialized event. Same scrub_query as the Referer: each case mirrors the referer.json case with the same id. Contract: .agent-team/runs/2026-10-12-bugfix/contracts/sdk-conformance.md (C6).",
+  "cases": [
+    {
+      "id": "empty",
+      "query": "",
+      "q": ""
+    },
+    {
+      "id": "question-mark-only",
+      "query": "?",
+      "q": "?"
+    },
+    {
+      "id": "reset-token-jwt-and-code",
+      "query": "?token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig&code=4/0AbCdEf",
+      "q": "?token=~r&code=~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+        "4/0AbCdEf"
+      ]
+    },
+    {
+      "id": "oauth-code",
+      "query": "?code=4/0AbCdEfGh&state=xyz123",
+      "q": "?code=~r&state=xyz123",
+      "absent": [
+        "4/0AbCdEfGh"
+      ]
+    },
+    {
+      "id": "magic-link-token",
+      "query": "?token=k9Q2mX7&next=/home",
+      "q": "?token=~r&next=/home",
+      "absent": [
+        "k9Q2mX7"
+      ]
+    },
+    {
+      "id": "jwt-under-benign-name",
+      "query": "?next=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+      "q": "?next=~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig"
+      ]
+    },
+    {
+      "id": "long-hex-value",
+      "query": "?id=a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2",
+      "q": "?id=~r",
+      "absent": [
+        "a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2"
+      ]
+    },
+    {
+      "id": "benign-query-untouched",
+      "query": "?q=shoes&page=2",
+      "q": "?q=shoes&page=2"
+    },
+    {
+      "id": "empty-query",
+      "query": "?",
+      "q": "?"
+    },
+    {
+      "id": "path-not-scrubbed",
+      "query": "?print=1",
+      "q": "?print=1"
+    },
+    {
+      "id": "relative-referer",
+      "query": "?token=abc123",
+      "q": "?token=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "uppercase-name",
+      "query": "?TOKEN=abc123",
+      "q": "?TOKEN=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "name-without-value",
+      "query": "?token&page=2",
+      "q": "?token&page=2"
+    },
+    {
+      "id": "empty-parts",
+      "query": "?page=2&&token=abc123",
+      "q": "?page=2&&token=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "empty-name",
+      "query": "?=x",
+      "q": "?=x"
+    },
+    {
+      "id": "bare-jwt-part",
+      "query": "?eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+      "q": "?~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig"
+      ]
+    },
+    {
+      "id": "nested-query-raw",
+      "query": "?next=/reset?token=abc123",
+      "q": "?next=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "nested-query-encoded",
+      "query": "?next=%2Freset%3Ftoken%3Dabc123",
+      "q": "?next=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "nested-query-double-encoded",
+      "query": "?next=%252Freset%253Ftoken%253Dabc123",
+      "q": "?next=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "redirect-uri-with-code",
+      "query": "?redirect_uri=https%3A%2F%2Fb.test%2Fcb%3Fcode%3Dsecret99&state=xyz",
+      "q": "?redirect_uri=~r&state=xyz",
+      "absent": [
+        "secret99"
+      ]
+    },
+    {
+      "id": "encoded-name",
+      "query": "?%74oken=abc123",
+      "q": "?%74oken=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "encoded-name-malformed-escape",
+      "query": "?%74oken%=abc123",
+      "q": "?%74oken%=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "value-with-equals",
+      "query": "?q=a%3Db",
+      "q": "?q=a%3Db"
+    },
+    {
+      "id": "plain-path-value-kept",
+      "query": "?next=%2Fhome",
+      "q": "?next=%2Fhome"
+    },
+    {
+      "id": "triple-encoded-plain-kept",
+      "query": "?next=%25252Fhome",
+      "q": "?next=%25252Fhome"
+    },
+    {
+      "id": "still-encoded-after-four-passes",
+      "query": "?next=%252525253F",
+      "q": "?next=~r"
+    },
+    {
+      "id": "sqli-quote-kept",
+      "query": "?q=1' or '1'='1",
+      "q": "?q=1' or '1'='1"
+    },
+    {
+      "id": "sqli-encoded-kept",
+      "query": "?q=1%27%20or%20%271%27%3D%271",
+      "q": "?q=1%27%20or%20%271%27%3D%271"
+    },
+    {
+      "id": "xss-svg-kept",
+      "query": "?q=<svg onload=alert(1)>",
+      "q": "?q=<svg onload=alert(1)>"
+    },
+    {
+      "id": "question-mark-value-kept",
+      "query": "?q=what%3F",
+      "q": "?q=what%3F"
+    },
+    {
+      "id": "nested-state-then-code",
+      "query": "?u=https%3A%2F%2Fb%2Fcb%3Fstate%3D1%26code%3Dsecret77",
+      "q": "?u=~r",
+      "absent": [
+        "secret77"
+      ]
+    },
+    {
+      "id": "nested-encoded-amp-jwt",
+      "query": "?x=foo%26eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sigsig",
+      "q": "?x=~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sigsig"
+      ]
+    },
+    {
+      "id": "nested-lowercase-escapes",
+      "query": "?next=%2freset%3ftoken%3dabc123",
+      "q": "?next=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "bare-part-nested",
+      "query": "?foo%26token%3Dabc123",
+      "q": "?~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "b64-plus-slash",
+      "query": "?x=ab+/ab+/ab+/ab+/ab+/ab+/ab+/ab+/ab+/ab+/",
+      "q": "?x=~r",
+      "absent": [
+        "ab+/ab+/ab+/"
+      ]
+    },
+    {
+      "id": "invalid-utf8-ff-kept",
+      "query": "?q=%FF",
+      "q": "?q=%FF"
+    },
+    {
+      "id": "invalid-utf8-sequence-kept",
+      "query": "?q=%C3%28",
+      "q": "?q=%C3%28"
+    },
+    {
+      "id": "hex-trailing-newline-kept",
+      "query": "?x=a1b2c3d4e5f60718293a4b5c6d7e8f90%0A",
+      "q": "?x=a1b2c3d4e5f60718293a4b5c6d7e8f90%0A"
+    },
+    {
+      "id": "ascii-only-case-fold",
+      "query": "?ſig=abc123&Key=abc123",
+      "q": "?ſig=abc123&Key=abc123"
+    }
+  ]
+}
