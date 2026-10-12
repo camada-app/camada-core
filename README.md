@@ -58,8 +58,10 @@ Those depend on it, so `npm install` of any of them brings it along.
   and count only; a schemeless `Authorization` value ships nothing at all), credential-looking
   query parts become `~r` (in the request's own query and in the `Referer`'s query and
   fragment, `scrubUrl`; paths are not rewritten, in either). Names and values are
-  percent-decoded before the test, and a value that decodes to a nested query (`?` or `=`, e.g.
-  `next=/reset?token=…` or an encoded `redirect_uri`) is dropped whole. User identifiers are
+  percent-decoded before the test, and a value that decodes to a nested query (`?`, `&` or `=`)
+  is dropped whole when any of its segments is a credential (`next=/reset?token=…`, an encoded
+  `redirect_uri` carrying a `code`); other values, attack payloads included, stay readable for the
+  analysis. User identifiers are
   HMAC-hashed in-process (`hashUserId`).
   `bodyShape` and `REDACT_ALLOWLIST` are staging for app-context body capture (a later phase);
   no SDK captures request bodies today. This package is open source so these claims are
@@ -73,8 +75,8 @@ Those depend on it, so `npm install` of any of them brings it along.
   otherwise the peer is the client and XFF is ignored. Adapters that have no socket peer
   (`resolveClientIp(null, …)`, e.g. `@camada/next`) still walk XFF: they trust the host's network
   edge, so the app must not be reachable around it. An adapter that has a socket must never pass
-  null for one request whose peer it cannot read; and a non-IP peer (a unix socket path) is never
-  trusted.
+  null for one request whose peer it cannot read. The result is always a valid IP or null: a
+  non-IP peer (a unix socket path, `ip:port`, a zone id) resolves to null and never walks XFF.
 
 ## `@camada/core/fetch` — the shared Web-fetch pipeline
 
