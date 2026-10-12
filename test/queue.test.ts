@@ -301,6 +301,51 @@ describe('EventQueue non-2xx answers (camada-all-a4m9)', () => {
     queue.stop();
   });
 
+  it('stop() during a 429 hold force-drains the held rows instead of discarding them (camada-all-a4m9 UAT)', async () => {
+    start();
+    let n = 0;
+    const queue = q(async () => { n++; return n === 1 ? new Response(null, { status: 429, headers: { 'retry-after': '30' } }) : new Response(null, { status: 202 }); });
+    queue.push({}); queue.push({});
+    await queue.flush();
+    expect(n).toBe(1);
+    expect(queue.size).toBe(2);
+    await queue.stop();
+    expect(n).toBe(2);
+    expect(queue.size).toBe(0);
+    expect(queue.dropped).toBe(0);
+  });
+
+  it('stop() during a 429 hold counts the held rows as dropped when the forced send still fails (camada-all-a4m9 UAT)', async () => {
+    start();
+    const queue = q(async () => new Response(null, { status: 429, headers: { 'retry-after': '30' } }));
+    queue.push({}); queue.push({}); queue.push({});
+    await queue.flush();
+    await queue.stop();
+    expect(queue.dropped).toBe(3);
+    expect(queue.size).toBe(0);
+    await vi.advanceTimersByTimeAsync(60_000);   // no hold timer survives stop()
+    expect(queue.dropped).toBe(3);
+  });
+
+  it('a throwing waitUntil never makes flush() throw, and the row still ships (R7-4)', async () => {
+    start();
+    const posts: unknown[][] = [];
+    const queue = q(async (_u, init) => { posts.push(JSON.parse(init!.body as string)); return new Response(null, { status: 202 }); });
+    queue.push({ n: 1 });
+    let p: Promise<void> | undefined;
+    expect(() => { p = queue.flush(() => { throw new Error('waitUntil outside a request'); }); }).not.toThrow();
+    await p;
+    expect(posts).toEqual([[{ n: 1 }]]);
+    // the in-flight branch (line 74) too
+    queue.push({ n: 2 });
+    const a = queue.flush();
+    queue.push({ n: 3 });
+    expect(() => { p = queue.flush(() => { throw new Error('boom'); }); }).not.toThrow();
+    await a; await p;
+    expect(posts.flat()).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]);
+    await queue.stop();
+  });
+
   it('a 2xx body is cancelled too (R6-7)', async () => {
     start();
     let cancelled = false;

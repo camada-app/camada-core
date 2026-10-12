@@ -71,7 +71,7 @@ export class EventQueue {
       // microtasks later): a row pushed now would sit until the next timer tick, or forever in a frozen
       // isolate. Drain again once it settles; edge runtimes hold the isolate open for the whole chain.
       const next = this.inflight.then(() => this.drain(force));
-      waitUntil?.(next);
+      try { waitUntil?.(next); } catch { /* a waitUntil outside its request throws: never into the block/challenge path (R7-4) */ }
       return next;
     }
     const left = this.heldUntil - Date.now();
@@ -117,17 +117,25 @@ export class EventQueue {
         this.dropped += batch.length;
       }
     })().catch(logRateLimited).finally(() => { this.inflight = null; });
-    waitUntil?.(this.inflight);
-    return this.inflight;
+    const running = this.inflight;
+    try { waitUntil?.(running); } catch { /* R7-4: see above */ }
+    return running;
   }
 
-  stop(): void {
+  /** Stops the timers and removes the exit hooks. Rows held by a 429 would otherwise sit forever with
+   *  no timer to retry them, so stop() force-drains them (sent, or counted in `dropped`); the returned
+   *  promise settles when that drain does and never rejects. */
+  stop(): Promise<void> {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    const held = this.holdTimer !== null;
     if (this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
     for (const [ev, fn] of this.exitHandlers.splice(0)) {
       ((globalThis as { process?: NodeJS.Process }).process)?.removeListener(ev, fn);
     }
     this.exitInstalled = false;
+    if (!held) return Promise.resolve();
+    this.heldUntil = 0;
+    return this.drain(true);
   }
 
   private exitHandlers: Array<[string, (...a: unknown[]) => void]> = [];
