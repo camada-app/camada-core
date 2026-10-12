@@ -106,6 +106,34 @@ describe('EventQueue', () => {
   });
 });
 
+describe('a flush that lands on the tail of a drain (camada-all-a4m9 int)', () => {
+  // The drain loop has emptied the queue but `inflight` is cleared a few microtasks later. A row
+  // pushed and flushed in that window used to get the finishing promise back and sat until the next
+  // 15 s tick (or forever, in a frozen serverless isolate). Probe every microtask offset of the tail.
+  it('ships a row pushed at any microtask after the in-flight send resolved, with no timer tick', async () => {
+    for (let k = 0; k < 8; k++) {
+      const batches: unknown[][] = [];
+      let release!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      const queue = q(async (_u, init) => {
+        batches.push(JSON.parse(init!.body as string));
+        if (batches.length === 1) await gate;
+        return new Response(null, { status: 202 });
+      }, { flushMs: 3_600_000 });
+      queue.push({ n: 'a' });
+      const held: Promise<unknown>[] = [];
+      void queue.flush();
+      release();
+      for (let i = 0; i < k; i++) await Promise.resolve();
+      queue.push({ n: 'b' });
+      void queue.flush((p) => held.push(p));
+      await Promise.all(held);
+      expect(batches.flat(), `offset ${k}`).toEqual([{ n: 'a' }, { n: 'b' }]);
+      queue.stop();
+    }
+  });
+});
+
 describe('exit flush', () => {
   it('flushes on SIGTERM and still exits where the host refuses process.kill (Deno without --allow-run)', async () => {
     const { EventEmitter } = await import('node:events');
