@@ -12,6 +12,7 @@ export { resolveClientIp, parseTrustedProxyEnv, type TrustedProxyConfig } from '
 export { parseKey, type CamadaKey, type CamadaRemoteConfig } from './config.js';
 export { guarded, guardedAsync, logRateLimited } from './guarded.js';
 export { onBodyDone, type BodyDoneOptions } from './body.js';
+export { readBodyCapped } from './body-cap.js';
 export { TAP_NODE, TAP_NEXT, TAP_HONO, TAP_SVELTEKIT, TAP_NUXT, TAP_REMIX, TAP_BUN, TAP_DENO, type Tap, DEFAULT_REFRESH_MS, DEFAULT_SNAPSHOT_VERSION, type SnapshotVersion, KILL_SWITCH_ENV } from './constants.js';
 export {
   CHALLENGE_COOKIE, CHALLENGE_TTL_MS, POW_BITS, NONCE_HEX,
