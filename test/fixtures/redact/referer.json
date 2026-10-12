@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "doc": "An event built with Referer header `referer` (null = header absent) must carry `ref` exactly; no string in `absent` may appear anywhere in the serialized event. Contract: sdk-conformance.md (C6).",
   "cases": [
     {
@@ -120,6 +120,164 @@
       "ticket": "ijsa",
       "referer": null,
       "ref": null
+    },
+    {
+      "id": "hash-route-query",
+      "ticket": "ijsa",
+      "referer": "https://app.test/#/reset?token=abc123",
+      "ref": "https://app.test/#/reset?token=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "string split, never a URL parser: the fragment is scrubbed as a query string"
+    },
+    {
+      "id": "fragment-question-then-param",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p#x?token=1",
+      "ref": "https://app.test/p#x?token=~r",
+      "note": "the part name is \"x?token\", which matches the credential-name pattern"
+    },
+    {
+      "id": "empty-fragment",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?page=2#",
+      "ref": "https://app.test/p?page=2#"
+    },
+    {
+      "id": "uppercase-name",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?TOKEN=abc123",
+      "ref": "https://app.test/p?TOKEN=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "name-without-value",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?token&page=2",
+      "ref": "https://app.test/p?token&page=2",
+      "note": "a bare part is kept unless its decoded text looks like a credential value"
+    },
+    {
+      "id": "empty-parts",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?page=2&&token=abc123",
+      "ref": "https://app.test/p?page=2&&token=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "empty-name",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?=x",
+      "ref": "https://app.test/p?=x"
+    },
+    {
+      "id": "bare-jwt-part",
+      "ticket": "ijsa",
+      "referer": "https://app.test/r?eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+      "ref": "https://app.test/r?~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig"
+      ],
+      "note": "a part with no '=' is replaced whole when it looks like a credential value"
+    },
+    {
+      "id": "bare-jwt-fragment",
+      "ticket": "ijsa",
+      "referer": "https://app.test/r#eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+      "ref": "https://app.test/r#~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig"
+      ]
+    },
+    {
+      "id": "nested-query-raw",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=/reset?token=abc123",
+      "ref": "https://app.test/login?next=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "a decoded value containing '?' or '=' is replaced whole"
+    },
+    {
+      "id": "nested-query-encoded",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=%2Freset%3Ftoken%3Dabc123",
+      "ref": "https://app.test/login?next=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "nested-query-double-encoded",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=%252Freset%253Ftoken%253Dabc123",
+      "ref": "https://app.test/login?next=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "decoding repeats until the text stops changing"
+    },
+    {
+      "id": "redirect-uri-with-code",
+      "ticket": "ijsa",
+      "referer": "https://app.test/authorize?redirect_uri=https%3A%2F%2Fb.test%2Fcb%3Fcode%3Dsecret99&state=xyz",
+      "ref": "https://app.test/authorize?redirect_uri=~r&state=xyz",
+      "absent": [
+        "secret99"
+      ]
+    },
+    {
+      "id": "encoded-name",
+      "ticket": "ijsa",
+      "referer": "https://app.test/v?%74oken=abc123",
+      "ref": "https://app.test/v?%74oken=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "the name is percent-decoded before the name test; the raw name is kept in the output"
+    },
+    {
+      "id": "encoded-name-malformed-escape",
+      "ticket": "ijsa",
+      "referer": "https://app.test/v?%74oken%=abc123",
+      "ref": "https://app.test/v?%74oken%=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "a '%' not followed by two hex digits is left as is; valid escapes around it still decode"
+    },
+    {
+      "id": "value-with-equals",
+      "ticket": "ijsa",
+      "referer": "https://app.test/search?q=a%3Db",
+      "ref": "https://app.test/search?q=~r",
+      "note": "the cost of the nested rule: any value that decodes to contain '=' or '?' is dropped"
+    },
+    {
+      "id": "plain-path-value-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=%2Fhome",
+      "ref": "https://app.test/login?next=%2Fhome"
+    },
+    {
+      "id": "triple-encoded-plain-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=%25252Fhome",
+      "ref": "https://app.test/login?next=%25252Fhome",
+      "note": "three decode passes reach /home: kept"
+    },
+    {
+      "id": "still-encoded-after-four-passes",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=%252525253F",
+      "ref": "https://app.test/login?next=~r",
+      "note": "decoding stops after 4 passes; a part that still holds a %HH escape is scrubbed"
     }
   ]
 }

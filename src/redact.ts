@@ -13,16 +13,32 @@ export const REDACT_ALLOWLIST = Object.freeze(['plan', 'role', 'locale', 'ab_var
 
 const suspectValue = (v: string) => JWT_RE.test(v) || HEX_RE.test(v) || B64_RE.test(v);
 
-/** Replaces credential-looking query values with ~r, preserving structure and order. */
+const ESC_RE = /%[0-9a-f]{2}/i, ESC_RE_G = /%([0-9a-f]{2})/gi;
+/** Percent-decoding that never throws: each `%HH` becomes that byte as one char (Latin-1), any other
+ *  `%` stays. Up to 4 passes, so double (or triple) encoding cannot hide a name or a nested query; text
+ *  that still holds a `%HH` after 4 passes returns null, which the caller scrubs. The cap keeps a
+ *  crafted `%252525…` from costing O(n²). Only ever used to TEST a part; the output keeps the raw text. */
+function decodeAll(s: string): string | null {
+  for (let i = 0; i < 4 && ESC_RE.test(s); i++) s = s.replace(ESC_RE_G, (_m, h: string) => String.fromCharCode(parseInt(h, 16)));
+  return ESC_RE.test(s) ? null : s;
+}
+
+/** Replaces credential-looking query parts with ~r, preserving structure and order (C6 v2). The
+ *  string is split on `&`, never URL-parsed. Each part's name and value are percent-decoded
+ *  (decodeAll) before testing. `name=value` → `name=~r` when the name looks like a credential, the
+ *  value looks like one, or the value contains `?` or `=` (a nested query, e.g. `next=/reset?token=x`
+ *  or an encoded `redirect_uri`, is dropped whole rather than scrubbed recursively). A bare part
+ *  (no `=`) → `~r` when it looks like a credential value. Either half still encoded after 4 decode
+ *  passes counts as a credential. Used for both the request's own `q` and the Referer (scrubUrl). */
 export function scrubQuery(query: string | null | undefined): string {
   if (!query || query.length <= 1) return query || '';
   const lead = query.startsWith('?') ? '?' : '';
   const parts = (lead ? query.slice(1) : query).split('&');
   return lead + parts.map((p) => {
     const eq = p.indexOf('=');
-    if (eq === -1) return p;
-    const name = p.slice(0, eq), value = p.slice(eq + 1);
-    return NAME_RE.test(name) || suspectValue(value) ? `${name}=~r` : p;
+    if (eq === -1) { const d = decodeAll(p); return d === null || suspectValue(d) ? '~r' : p; }
+    const name = p.slice(0, eq), dn = decodeAll(name), dv = decodeAll(p.slice(eq + 1));
+    return dn === null || dv === null || NAME_RE.test(dn) || suspectValue(dv) || /[?=]/.test(dv) ? `${name}=~r` : p;
   }).join('&');
 }
 
