@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { createHash, createHmac } from 'node:crypto';
+import vm from 'node:vm';
 import {
-  createChallenge, createChallengeAsync, challengePage, challengeCookie, safeReturnTo,
-  wantsHtml, parseFormBody, CHALLENGE_COOKIE, CHALLENGE_TTL_MS, POW_BITS,
+  createChallenge, createChallengeAsync, challengePage, challengePageCsp, challengeCookie, safeReturnTo,
+  wantsHtml, parseFormBody, powOk, CHALLENGE_COOKIE, CHALLENGE_TTL_MS, POW_BITS,
 } from '../src/index.js';
 
 const SECRET = 'tok-acme.snap-acme';
@@ -189,5 +190,57 @@ describe('hardening', () => {
     const parsed = parseFormBody('__proto__=x&a=1');
     expect(Object.getPrototypeOf(parsed)).toBeNull();
     expect(parsed.a).toBe('1');
+  });
+});
+
+describe('page CSP (camada-all-mwpo)', () => {
+  const sha = (s: string) => `'sha256-${createHash('sha256').update(s, 'utf8').digest('base64')}'`;
+  const inline = (page: string, tag: string) => [...page.matchAll(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'g'))].map((m) => m[1]);
+
+  it('allows exactly the served inline solver and style, by hash, and nothing else', () => {
+    for (const bits of [undefined, 1, 12, 16, 20, 32]) {
+      const page = challengePage({ nonce: 'abc123', action: '/__camada/challenge', to: '/x', bits });
+      const csp = challengePageCsp(bits);
+      const [script] = inline(page, 'script');
+      const [style] = inline(page, 'style');
+      expect(csp).toContain(`script-src ${sha(script)};`);
+      expect(csp).toContain(`style-src ${sha(style)};`);
+      expect(csp).toContain("default-src 'none'");
+      // no form-action: it also governs the redirects after the POST, so an app that 302s on to
+      // an external IdP after verify's 302 would be blocked (R1-12)
+      expect(csp).not.toContain('form-action');
+      expect(csp).not.toContain('unsafe');
+    }
+  });
+
+  it('is fixed per bits value: the nonce, action and return target never reach the script', () => {
+    const a = challengePage({ nonce: 'aaaa', action: '/a', to: '/one' });
+    const b = challengePage({ nonce: 'bbbb', action: '/b', to: '/two?x="y' });
+    expect(inline(a, 'script')).toEqual(inline(b, 'script'));
+    expect(challengePageCsp()).toBe(challengePageCsp(16));
+    expect(challengePageCsp(12)).not.toBe(challengePageCsp(16));
+    expect(challengePageCsp(99)).toBe(challengePageCsp(32));   // clamped like the page
+  });
+
+  // The served solver itself, run in a sandbox with a stub DOM: it must read the nonce from the
+  // form, find a solution the server accepts, submit, and be the script the CSP hash allows.
+  it.each([8, 16])('the served solver solves at %i bits and is the script the CSP allows', (bits) => {
+    const nonce = 'f'.repeat(31) + '1';
+    const page = challengePage({ nonce, action: '/__camada/challenge', to: '/x', bits });
+    const [script] = inline(page, 'script');
+    const formNonce = /<input[^>]*name="nonce" value="([^"]+)"[^>]*id="camada-n"/.exec(page)![1];
+    let submitted = 0;
+    const els: Record<string, Record<string, unknown>> = {
+      'camada-n': { value: formNonce }, 'camada-s': { value: '' }, 'camada-msg': { textContent: '' },
+      'camada-f': { submit() { submitted++; } },
+    };
+    vm.runInNewContext(script, {
+      window: {}, document: { getElementById: (id: string) => els[id] ?? null }, setTimeout: (f: () => void) => f(),
+    });
+    expect(submitted).toBe(1);
+    const solution = els['camada-s'].value as string;
+    expect(solution).toMatch(/^\d+$/);
+    expect(powOk(createHash('sha256').update(`${nonce}.${solution}`).digest('hex'), bits)).toBe(true);
+    expect(challengePageCsp(bits)).toContain(`script-src ${sha(script)};`);
   });
 });
