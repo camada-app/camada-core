@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "doc": "An event built with Referer header `referer` (null = header absent) must carry `ref` exactly; no string in `absent` may appear anywhere in the serialized event. Contract: sdk-conformance.md (C6).",
+  "cases": [
+    {
+      "id": "reset-token-jwt-and-code",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/reset-password?token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig&code=4/0AbCdEf",
+      "ref": "https://shop.test/reset-password?token=~r&code=~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+        "4/0AbCdEf"
+      ]
+    },
+    {
+      "id": "oauth-code",
+      "ticket": "ijsa",
+      "referer": "https://app.test/oauth/callback?code=4/0AbCdEfGh&state=xyz123",
+      "ref": "https://app.test/oauth/callback?code=~r&state=xyz123",
+      "absent": [
+        "4/0AbCdEfGh"
+      ]
+    },
+    {
+      "id": "magic-link-token",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login/magic?token=k9Q2mX7&next=/home",
+      "ref": "https://app.test/login/magic?token=~r&next=/home",
+      "absent": [
+        "k9Q2mX7"
+      ]
+    },
+    {
+      "id": "jwt-under-benign-name",
+      "ticket": "ijsa",
+      "referer": "https://app.test/go?next=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+      "ref": "https://app.test/go?next=~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig"
+      ]
+    },
+    {
+      "id": "long-hex-value",
+      "ticket": "ijsa",
+      "referer": "https://app.test/verify?id=a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2",
+      "ref": "https://app.test/verify?id=~r",
+      "absent": [
+        "a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2"
+      ]
+    },
+    {
+      "id": "fragment-implicit-grant",
+      "ticket": "ijsa",
+      "referer": "https://app.test/cb#access_token=ya29.a0AfH6SM&token_type=Bearer&expires_in=3599",
+      "ref": "https://app.test/cb#access_token=~r&token_type=~r&expires_in=3599",
+      "absent": [
+        "ya29.a0AfH6SM"
+      ],
+      "note": "browsers strip the fragment from Referer; other clients may not"
+    },
+    {
+      "id": "query-and-fragment",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?token=abc123#code=def456",
+      "ref": "https://app.test/p?token=~r#code=~r",
+      "absent": [
+        "abc123",
+        "def456"
+      ]
+    },
+    {
+      "id": "fragment-anchor-untouched",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/products?page=2&sort=price#reviews",
+      "ref": "https://shop.test/products?page=2&sort=price#reviews"
+    },
+    {
+      "id": "benign-query-untouched",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/search?q=shoes&page=2",
+      "ref": "https://shop.test/search?q=shoes&page=2"
+    },
+    {
+      "id": "no-query",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/products/42",
+      "ref": "https://shop.test/products/42"
+    },
+    {
+      "id": "origin-only",
+      "ticket": "ijsa",
+      "referer": "https://shop.test",
+      "ref": "https://shop.test",
+      "note": "what strict-origin-when-cross-origin sends cross-origin"
+    },
+    {
+      "id": "empty-query",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/p?",
+      "ref": "https://shop.test/p?"
+    },
+    {
+      "id": "path-not-scrubbed",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/orders/8812/receipt?print=1",
+      "ref": "https://shop.test/orders/8812/receipt?print=1",
+      "note": "the Referer path gets the same treatment as the request path p: none"
+    },
+    {
+      "id": "relative-referer",
+      "ticket": "ijsa",
+      "referer": "/reset-password?token=abc123",
+      "ref": "/reset-password?token=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "no-referer",
+      "ticket": "ijsa",
+      "referer": null,
+      "ref": null
+    }
+  ]
+}

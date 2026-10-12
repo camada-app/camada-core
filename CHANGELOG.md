@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `resolveClientIp` in `cidrs` mode (also the dashboard's Cloudflare option) no longer believes
+  `X-Forwarded-For` from a socket peer that is not a trusted proxy: such a peer is the client.
+  Before this, anyone reaching the origin directly could pick their own client IP, slip past an
+  IP block or get another IP blocked. A loopback peer (127.0.0.0/8, `::1`, `::ffff:127.x.x.x`)
+  counts as a trusted hop, so local front ends (App Engine) keep working unchanged. With no peer
+  (`resolveClientIp(null, …)`) the walk is unchanged and trusts the host's edge. (camada-all-yfc6)
+- `X-Forwarded-For` entries with a port (`203.0.113.66:51234`, `[2001:db8::66]:51234`, as Azure
+  Application Gateway writes them) now resolve to the address in every mode instead of falling
+  back to the proxy's own IP. A malformed entry still falls back to the peer. (camada-all-0vho)
+- The `ref` field no longer ships the Referer verbatim: its query and fragment go through the same
+  credential scrub as the request query (`~r`), so a reset token or OAuth `code` on the previous
+  page stays in the process. New export `scrubUrl`. (camada-all-ijsa)
+- Shared conformance fixtures for these cases, for every server SDK: `test/fixtures/ip/resolve.json`
+  and `test/fixtures/redact/referer.json`.
+
 ## 0.5.1 (2026-10-09; follows 0.5.0)
 
 ### Fixed

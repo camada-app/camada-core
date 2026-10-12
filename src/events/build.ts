@@ -2,7 +2,7 @@
 // workers/collector/edge-collector.js) from a normalized request, so events are comparable
 // across taps. HDRS bit order is pinned by the shared fixture (hdrs.json) — never reorder.
 
-import { scrubQuery } from '../redact.js';
+import { scrubQuery, scrubUrl } from '../redact.js';
 import type { Tap } from '../constants.js';
 
 export const HDRS = Object.freeze([
@@ -68,7 +68,7 @@ export function buildWireEvent(r: RequestInfo, o: BuildOptions): WireEvent {
     ct: h('content-type'), cl: h('content-length'),
     ua: h('user-agent'), chua: h('sec-ch-ua'), chmob: h('sec-ch-ua-mobile'), chplat: h('sec-ch-ua-platform'),
     acc: h('accept'), lang: h('accept-language'), fs: h('sec-fetch-site'), fm: h('sec-fetch-mode'),
-    fd: h('sec-fetch-dest'), fu: h('sec-fetch-user'), ref: h('referer'), org: h('origin'),
+    fd: h('sec-fetch-dest'), fu: h('sec-fetch-user'), ref: scrubUrl(h('referer')), org: h('origin'),   // ref: a credential in the previous page's query must not ride along
     xrw: h('x-requested-with'), auth,   // scheme only, never the credential (see authScheme)
     hm: mask >>> 0, hn, hb, ck: cookie ? cookie.split(';').length : 0,
     hord: names.join(',').slice(0, 2048),   // true wire header order — the signal only this position has
