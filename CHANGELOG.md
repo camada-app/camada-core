@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- `EventQueue` honours a 429 `Retry-After` given as an HTTP-date (RFC 9110), not only
+  delta-seconds, with the same 1 s floor / 60 s cap. The snapshot poll's pacing is unchanged
+  (dates still read as 0 there). (camada-all-a4m9)
+- `EventQueue.stop()` called while a drain is in flight no longer lets that drain's 429 start a hold
+  timer after stop() resolved (rows retried forever, never counted). The 429'd rows are re-queued
+  without a timer and stop()'s promise covers the in-flight drain plus one forced retry (sent, or
+  counted in `dropped`). (camada-all-a4m9)
 - Block responses (path, ip, asn, country, tls and rule blocks, the `Forbidden` 403) now send `cache-control: no-store`, like the challenge answers, so a shared cache cannot serve one visitor's block to others. (also remix, sveltekit, nuxt, bun, deno, which answer through it) (camada-all-8lp6)
 - `EventQueue.stop()` during a 429 hold no longer throws the held rows away with the retry timer:
   it force-drains them like the exit flush (sent, or counted in `dropped` if the send still fails)

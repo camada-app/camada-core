@@ -10,6 +10,16 @@ import { parseRetryAfter } from '../snapshot/backoff.js';
 
 const HOLD_MIN_MS = 1_000, HOLD_MAX_MS = 60_000;   // a 429 holds the queue for retry-after, clamped so a junk or huge value neither spins nor silences ingest for long
 
+/** The queue's 429 hold, in ms before the clamp. Retry-After is delta-seconds OR an HTTP-date (RFC 9110
+ *  §10.2.3); the snapshot poll's parseRetryAfter reads dates as 0 by contract (C7), so the date form is
+ *  handled here only. A past date or an unparseable value reads as 0 (the floor applies). */
+function retryAfterMs(v: string | null, now: number): number {
+  const s = (v ?? '').trim();
+  if (s === '' || /^[0-9]+$/.test(s)) return parseRetryAfter(s) * 1000;
+  const at = Date.parse(s);
+  return Number.isFinite(at) ? Math.max(Math.ceil((at - now) / 1000), 0) * 1000 : 0;   // whole seconds, like delta-seconds: a date names a second, never retry inside it
+}
+
 export interface EventQueueOptions {
   url: string;                    // ingest base, e.g. https://analyst.example.com
   token: string;                  // ingest token (x-tenant header)
@@ -34,6 +44,7 @@ export class EventQueue {
   private exitInstalled = false;
   private heldUntil = 0;           // a 429 holds the head batch until then (ms epoch)
   private holdTimer: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;         // set by stop(), cleared by push(): a 429 answered after stop() must not start a hold timer
   dropped = 0;                    // debug counter, not an API promise
   private readonly opts: Required<Omit<EventQueueOptions, 'fetchImpl' | 'sdk'>> & { fetchImpl: typeof fetch; sdk?: string };
 
@@ -47,6 +58,7 @@ export class EventQueue {
   /** Synchronous, never throws. Starts the interval timer lazily on first push. */
   push(event: unknown): void {
     try {
+      this.stopped = false;
       if (this.q.length >= this.opts.maxQueue) { this.q.shift(); this.dropped++; }
       this.q.push(event);
       if (!this.timer) {
@@ -107,7 +119,8 @@ export class EventQueue {
           this.q.unshift(...batch);
           const over = this.q.length - this.opts.maxQueue;
           if (over > 0) { this.q.splice(0, over); this.dropped += over; }
-          const ms = Math.min(Math.max(parseRetryAfter(res.headers.get('retry-after')) * 1000, HOLD_MIN_MS), HOLD_MAX_MS);
+          if (this.stopped) return;   // stop() ran mid-drain: no timer may outlive it; its forced drain (chained on this one) retries once
+          const ms = Math.min(Math.max(retryAfterMs(res.headers.get('retry-after'), Date.now()), HOLD_MIN_MS), HOLD_MAX_MS);
           this.heldUntil = Date.now() + ms;
           if (this.holdTimer) clearTimeout(this.holdTimer);
           this.holdTimer = setTimeout(() => { this.holdTimer = null; this.heldUntil = 0; void this.flush(); }, ms);   // the timer, not the wall clock, ends the hold
@@ -123,9 +136,11 @@ export class EventQueue {
   }
 
   /** Stops the timers and removes the exit hooks. Rows held by a 429 would otherwise sit forever with
-   *  no timer to retry them, so stop() force-drains them (sent, or counted in `dropped`); the returned
-   *  promise settles when that drain does and never rejects. */
+   *  no timer to retry them, so stop() force-drains them (sent, or counted in `dropped`). A drain in
+   *  flight is awaited first; if it then meets a 429 its rows are re-queued without a timer and the
+   *  forced drain retries them once. The returned promise settles when that drain does and never rejects. */
   stop(): Promise<void> {
+    this.stopped = true;
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     const held = this.holdTimer !== null;
     if (this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
@@ -133,7 +148,7 @@ export class EventQueue {
       ((globalThis as { process?: NodeJS.Process }).process)?.removeListener(ev, fn);
     }
     this.exitInstalled = false;
-    if (!held) return Promise.resolve();
+    if (!held && !this.inflight) return Promise.resolve();
     this.heldUntil = 0;
     return this.drain(true);
   }
