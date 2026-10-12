@@ -3,6 +3,8 @@
 // params that look like credentials, or raw user identifiers (HMAC-hashed here, inside the SDK,
 // before anything reaches the queue). Customers can widen the ALLOWLIST, never narrow redaction.
 
+// Exact patterns of C6 v3 (ports copy them). JS without the `u` flag: `i` folds ASCII only, `$` is the
+// true end of input (no newline before it), and `[0-9a-f]` with `i` is ASCII hex only.
 const NAME_RE = /(pass(word)?|tok(en)?|secret|key|api[-_]?key|auth|sess(ion)?|sig(nature)?|code|jwt|bearer|credential)/i;
 const JWT_RE = /^eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/;
 const HEX_RE = /^[a-f0-9]{32,}$/i;
@@ -23,22 +25,32 @@ function decodeAll(s: string): string | null {
   return ESC_RE.test(s) ? null : s;
 }
 
-/** Replaces credential-looking query parts with ~r, preserving structure and order (C6 v2). The
+/** One `name=value` or bare segment of a decoded nested value (no further decoding, no recursion). */
+function credSegment(seg: string): boolean {
+  const eq = seg.indexOf('=');
+  return eq === -1 ? suspectValue(seg) : NAME_RE.test(seg.slice(0, eq)) || suspectValue(seg.slice(eq + 1));
+}
+/** A decoded value that carries a nested query (`?`, `&` or `=`) is a credential when any of its
+ *  `[?&]`-separated segments is one (C6 v3). `q=a=b` or `q=1' or '1'='1` is not; `next=/r?token=x` is. */
+const nestedCred = (d: string) => /[?&=]/.test(d) && d.split(/[?&]/).some(credSegment);
+
+/** Replaces credential-looking query parts with ~r, preserving structure and order (C6 v3). The
  *  string is split on `&`, never URL-parsed. Each part's name and value are percent-decoded
  *  (decodeAll) before testing. `name=value` → `name=~r` when the name looks like a credential, the
- *  value looks like one, or the value contains `?` or `=` (a nested query, e.g. `next=/reset?token=x`
- *  or an encoded `redirect_uri`, is dropped whole rather than scrubbed recursively). A bare part
- *  (no `=`) → `~r` when it looks like a credential value. Either half still encoded after 4 decode
- *  passes counts as a credential. Used for both the request's own `q` and the Referer (scrubUrl). */
+ *  value looks like one, or the value holds a nested query with a credential segment (nestedCred;
+ *  replaced whole, so payloads like `q=1' or '1'='1` stay visible to the scorer). A bare part (no
+ *  `=`) → `~r` when it looks like a credential value or holds a credential segment. Either half still
+ *  encoded after 4 decode passes counts as a credential. Used for both the request's own `q` and the
+ *  Referer (scrubUrl). */
 export function scrubQuery(query: string | null | undefined): string {
   if (!query || query.length <= 1) return query || '';
   const lead = query.startsWith('?') ? '?' : '';
   const parts = (lead ? query.slice(1) : query).split('&');
   return lead + parts.map((p) => {
     const eq = p.indexOf('=');
-    if (eq === -1) { const d = decodeAll(p); return d === null || suspectValue(d) ? '~r' : p; }
+    if (eq === -1) { const d = decodeAll(p); return d === null || suspectValue(d) || nestedCred(d) ? '~r' : p; }
     const name = p.slice(0, eq), dn = decodeAll(name), dv = decodeAll(p.slice(eq + 1));
-    return dn === null || dv === null || NAME_RE.test(dn) || suspectValue(dv) || /[?=]/.test(dv) ? `${name}=~r` : p;
+    return dn === null || dv === null || NAME_RE.test(dn) || suspectValue(dv) || nestedCred(dv) ? `${name}=~r` : p;
   }).join('&');
 }
 

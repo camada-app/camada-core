@@ -5,6 +5,8 @@ import { scrubQuery, scrubUrl, bodyShape, hashUserId, buildWireEvent } from '../
 // Shared conformance fixture (contract C6): every server SDK runs the same cases.
 interface RefCase { id: string; referer: string | null; ref: string | null; absent?: string[] }
 const refFx = JSON.parse(readFileSync(new URL('./fixtures/redact/referer.json', import.meta.url), 'utf8')) as { cases: RefCase[] };
+interface QCase { id: string; query: string; q: string; absent?: string[] }
+const qFx = JSON.parse(readFileSync(new URL('./fixtures/redact/query.json', import.meta.url), 'utf8')) as { cases: QCase[] };
 
 describe('Referer redaction conformance (fixtures/redact/referer.json)', () => {
   it.each(refFx.cases.map((c) => [c.id, c] as const))('%s', (_label, c) => {
@@ -14,6 +16,15 @@ describe('Referer redaction conformance (fixtures/redact/referer.json)', () => {
       ip: '9.9.9.9',
     }, { tap: 'sdk-node', rid: 'r1' });
     expect(ev.ref).toBe(c.ref);
+    const wire = JSON.stringify(ev);
+    for (const s of c.absent ?? []) expect(wire).not.toContain(s);
+  });
+});
+
+describe('request query redaction conformance (fixtures/redact/query.json)', () => {
+  it.each(qFx.cases.map((c) => [c.id, c] as const))('%s', (_label, c) => {
+    const ev = buildWireEvent({ method: 'GET', host: 'shop.test', path: '/p', query: c.query, headers: [], ip: '9.9.9.9' }, { tap: 'sdk-node', rid: 'r1' });
+    expect(ev.q).toBe(c.q);
     const wire = JSON.stringify(ev);
     for (const s of c.absent ?? []) expect(wire).not.toContain(s);
   });
