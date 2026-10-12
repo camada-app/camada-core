@@ -1,0 +1,385 @@
+{
+  "version": 3,
+  "doc": "An event built with Referer header `referer` (null = header absent) must carry `ref` exactly; no string in `absent` may appear anywhere in the serialized event. Contract: sdk-conformance.md (C6).",
+  "cases": [
+    {
+      "id": "reset-token-jwt-and-code",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/reset-password?token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig&code=4/0AbCdEf",
+      "ref": "https://shop.test/reset-password?token=~r&code=~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+        "4/0AbCdEf"
+      ]
+    },
+    {
+      "id": "oauth-code",
+      "ticket": "ijsa",
+      "referer": "https://app.test/oauth/callback?code=4/0AbCdEfGh&state=xyz123",
+      "ref": "https://app.test/oauth/callback?code=~r&state=xyz123",
+      "absent": [
+        "4/0AbCdEfGh"
+      ]
+    },
+    {
+      "id": "magic-link-token",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login/magic?token=k9Q2mX7&next=/home",
+      "ref": "https://app.test/login/magic?token=~r&next=/home",
+      "absent": [
+        "k9Q2mX7"
+      ]
+    },
+    {
+      "id": "jwt-under-benign-name",
+      "ticket": "ijsa",
+      "referer": "https://app.test/go?next=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+      "ref": "https://app.test/go?next=~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig"
+      ]
+    },
+    {
+      "id": "long-hex-value",
+      "ticket": "ijsa",
+      "referer": "https://app.test/verify?id=a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2",
+      "ref": "https://app.test/verify?id=~r",
+      "absent": [
+        "a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2a1b2"
+      ]
+    },
+    {
+      "id": "fragment-implicit-grant",
+      "ticket": "ijsa",
+      "referer": "https://app.test/cb#access_token=ya29.a0AfH6SM&token_type=Bearer&expires_in=3599",
+      "ref": "https://app.test/cb#access_token=~r&token_type=~r&expires_in=3599",
+      "absent": [
+        "ya29.a0AfH6SM"
+      ],
+      "note": "browsers strip the fragment from Referer; other clients may not"
+    },
+    {
+      "id": "query-and-fragment",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?token=abc123#code=def456",
+      "ref": "https://app.test/p?token=~r#code=~r",
+      "absent": [
+        "abc123",
+        "def456"
+      ]
+    },
+    {
+      "id": "fragment-anchor-untouched",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/products?page=2&sort=price#reviews",
+      "ref": "https://shop.test/products?page=2&sort=price#reviews"
+    },
+    {
+      "id": "benign-query-untouched",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/search?q=shoes&page=2",
+      "ref": "https://shop.test/search?q=shoes&page=2"
+    },
+    {
+      "id": "no-query",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/products/42",
+      "ref": "https://shop.test/products/42"
+    },
+    {
+      "id": "origin-only",
+      "ticket": "ijsa",
+      "referer": "https://shop.test",
+      "ref": "https://shop.test",
+      "note": "what strict-origin-when-cross-origin sends cross-origin"
+    },
+    {
+      "id": "empty-query",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/p?",
+      "ref": "https://shop.test/p?"
+    },
+    {
+      "id": "path-not-scrubbed",
+      "ticket": "ijsa",
+      "referer": "https://shop.test/orders/8812/receipt?print=1",
+      "ref": "https://shop.test/orders/8812/receipt?print=1",
+      "note": "the Referer path gets the same treatment as the request path p: none"
+    },
+    {
+      "id": "relative-referer",
+      "ticket": "ijsa",
+      "referer": "/reset-password?token=abc123",
+      "ref": "/reset-password?token=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "no-referer",
+      "ticket": "ijsa",
+      "referer": null,
+      "ref": null
+    },
+    {
+      "id": "hash-route-query",
+      "ticket": "ijsa",
+      "referer": "https://app.test/#/reset?token=abc123",
+      "ref": "https://app.test/#/reset?token=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "string split, never a URL parser: the fragment is scrubbed as a query string"
+    },
+    {
+      "id": "fragment-question-then-param",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p#x?token=1",
+      "ref": "https://app.test/p#x?token=~r",
+      "note": "the part name is \"x?token\", which matches the credential-name pattern"
+    },
+    {
+      "id": "empty-fragment",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?page=2#",
+      "ref": "https://app.test/p?page=2#"
+    },
+    {
+      "id": "uppercase-name",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?TOKEN=abc123",
+      "ref": "https://app.test/p?TOKEN=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "name-without-value",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?token&page=2",
+      "ref": "https://app.test/p?token&page=2",
+      "note": "a bare part is kept unless its decoded text looks like a credential value"
+    },
+    {
+      "id": "empty-parts",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?page=2&&token=abc123",
+      "ref": "https://app.test/p?page=2&&token=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "empty-name",
+      "ticket": "ijsa",
+      "referer": "https://app.test/p?=x",
+      "ref": "https://app.test/p?=x"
+    },
+    {
+      "id": "bare-jwt-part",
+      "ticket": "ijsa",
+      "referer": "https://app.test/r?eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+      "ref": "https://app.test/r?~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig"
+      ],
+      "note": "a part with no '=' is replaced whole when it looks like a credential value"
+    },
+    {
+      "id": "bare-jwt-fragment",
+      "ticket": "ijsa",
+      "referer": "https://app.test/r#eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig",
+      "ref": "https://app.test/r#~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyLTQyIiwicHVycG9zZSI6InJlc2V0In0.sig-sig-sig"
+      ]
+    },
+    {
+      "id": "nested-query-raw",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=/reset?token=abc123",
+      "ref": "https://app.test/login?next=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "a decoded value holding '?', '&' or '=' is split on [?&]; it is replaced whole when any segment is a credential"
+    },
+    {
+      "id": "nested-query-encoded",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=%2Freset%3Ftoken%3Dabc123",
+      "ref": "https://app.test/login?next=~r",
+      "absent": [
+        "abc123"
+      ]
+    },
+    {
+      "id": "nested-query-double-encoded",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=%252Freset%253Ftoken%253Dabc123",
+      "ref": "https://app.test/login?next=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "decoding repeats until the text stops changing"
+    },
+    {
+      "id": "redirect-uri-with-code",
+      "ticket": "ijsa",
+      "referer": "https://app.test/authorize?redirect_uri=https%3A%2F%2Fb.test%2Fcb%3Fcode%3Dsecret99&state=xyz",
+      "ref": "https://app.test/authorize?redirect_uri=~r&state=xyz",
+      "absent": [
+        "secret99"
+      ]
+    },
+    {
+      "id": "encoded-name",
+      "ticket": "ijsa",
+      "referer": "https://app.test/v?%74oken=abc123",
+      "ref": "https://app.test/v?%74oken=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "the name is percent-decoded before the name test; the raw name is kept in the output"
+    },
+    {
+      "id": "encoded-name-malformed-escape",
+      "ticket": "ijsa",
+      "referer": "https://app.test/v?%74oken%=abc123",
+      "ref": "https://app.test/v?%74oken%=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "a '%' not followed by two hex digits is left as is; valid escapes around it still decode"
+    },
+    {
+      "id": "value-with-equals",
+      "ticket": "ijsa",
+      "referer": "https://app.test/search?q=a%3Db",
+      "ref": "https://app.test/search?q=a%3Db",
+      "note": "v3: a nested value is replaced only when one of its [?&]-segments is a credential; 'a=b' is not"
+    },
+    {
+      "id": "plain-path-value-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=%2Fhome",
+      "ref": "https://app.test/login?next=%2Fhome"
+    },
+    {
+      "id": "triple-encoded-plain-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=%25252Fhome",
+      "ref": "https://app.test/login?next=%25252Fhome",
+      "note": "three decode passes reach /home: kept"
+    },
+    {
+      "id": "still-encoded-after-four-passes",
+      "ticket": "ijsa",
+      "referer": "https://app.test/login?next=%252525253F",
+      "ref": "https://app.test/login?next=~r",
+      "note": "decoding stops after 4 passes; a part that still holds a %HH escape is scrubbed"
+    },
+    {
+      "id": "sqli-quote-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=1' or '1'='1",
+      "ref": "https://app.test/s?q=1' or '1'='1",
+      "note": "v3: attack payloads stay visible to the analyst scorer"
+    },
+    {
+      "id": "sqli-encoded-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=1%27%20or%20%271%27%3D%271",
+      "ref": "https://app.test/s?q=1%27%20or%20%271%27%3D%271"
+    },
+    {
+      "id": "xss-svg-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=<svg onload=alert(1)>",
+      "ref": "https://app.test/s?q=<svg onload=alert(1)>"
+    },
+    {
+      "id": "question-mark-value-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=what%3F",
+      "ref": "https://app.test/s?q=what%3F"
+    },
+    {
+      "id": "nested-state-then-code",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?u=https%3A%2F%2Fb%2Fcb%3Fstate%3D1%26code%3Dsecret77",
+      "ref": "https://app.test/s?u=~r",
+      "absent": [
+        "secret77"
+      ],
+      "note": "segments: https://b/cb, state=1, code=secret77 (credential name)"
+    },
+    {
+      "id": "nested-encoded-amp-jwt",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?x=foo%26eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sigsig",
+      "ref": "https://app.test/s?x=~r",
+      "absent": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sigsig"
+      ],
+      "note": "segment after the decoded & is a JWT"
+    },
+    {
+      "id": "nested-lowercase-escapes",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?next=%2freset%3ftoken%3dabc123",
+      "ref": "https://app.test/s?next=~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "hex digits of %HH in either case"
+    },
+    {
+      "id": "bare-part-nested",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?foo%26token%3Dabc123",
+      "ref": "https://app.test/s?~r",
+      "absent": [
+        "abc123"
+      ],
+      "note": "a bare part gets the same nested test"
+    },
+    {
+      "id": "b64-plus-slash",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?x=ab+/ab+/ab+/ab+/ab+/ab+/ab+/ab+/ab+/ab+/",
+      "ref": "https://app.test/s?x=~r",
+      "absent": [
+        "ab+/ab+/ab+/"
+      ],
+      "note": "no '+' to space: '+' is a base64 character"
+    },
+    {
+      "id": "invalid-utf8-ff-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=%FF",
+      "ref": "https://app.test/s?q=%FF",
+      "note": "decode is bytewise (Latin-1), never a UTF-8 decoder that throws or substitutes"
+    },
+    {
+      "id": "invalid-utf8-sequence-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?q=%C3%28",
+      "ref": "https://app.test/s?q=%C3%28"
+    },
+    {
+      "id": "hex-trailing-newline-kept",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?x=a1b2c3d4e5f60718293a4b5c6d7e8f90%0A",
+      "ref": "https://app.test/s?x=a1b2c3d4e5f60718293a4b5c6d7e8f90%0A",
+      "note": "whole-string anchors: a trailing newline does not satisfy the end anchor"
+    },
+    {
+      "id": "ascii-only-case-fold",
+      "ticket": "ijsa",
+      "referer": "https://app.test/s?ſig=abc123&Key=abc123",
+      "ref": "https://app.test/s?ſig=abc123&Key=abc123",
+      "note": "case-insensitive matching is ASCII-only: U+017F and U+212A do not match s and k"
+    }
+  ]
+}

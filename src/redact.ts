@@ -3,6 +3,8 @@
 // params that look like credentials, or raw user identifiers (HMAC-hashed here, inside the SDK,
 // before anything reaches the queue). Customers can widen the ALLOWLIST, never narrow redaction.
 
+// Exact patterns of C6 v3 (ports copy them). JS without the `u` flag: `i` folds ASCII only, `$` is the
+// true end of input (no newline before it), and `[0-9a-f]` with `i` is ASCII hex only.
 const NAME_RE = /(pass(word)?|tok(en)?|secret|key|api[-_]?key|auth|sess(ion)?|sig(nature)?|code|jwt|bearer|credential)/i;
 const JWT_RE = /^eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/;
 const HEX_RE = /^[a-f0-9]{32,}$/i;
@@ -13,17 +15,58 @@ export const REDACT_ALLOWLIST = Object.freeze(['plan', 'role', 'locale', 'ab_var
 
 const suspectValue = (v: string) => JWT_RE.test(v) || HEX_RE.test(v) || B64_RE.test(v);
 
-/** Replaces credential-looking query values with ~r, preserving structure and order. */
+const ESC_RE = /%[0-9a-f]{2}/i, ESC_RE_G = /%([0-9a-f]{2})/gi;
+/** Percent-decoding that never throws: each `%HH` becomes that byte as one char (Latin-1), any other
+ *  `%` stays. Up to 4 passes, so double (or triple) encoding cannot hide a name or a nested query; text
+ *  that still holds a `%HH` after 4 passes returns null, which the caller scrubs. The cap keeps a
+ *  crafted `%252525…` from costing O(n²). Only ever used to TEST a part; the output keeps the raw text. */
+function decodeAll(s: string): string | null {
+  for (let i = 0; i < 4 && ESC_RE.test(s); i++) s = s.replace(ESC_RE_G, (_m, h: string) => String.fromCharCode(parseInt(h, 16)));
+  return ESC_RE.test(s) ? null : s;
+}
+
+/** One `name=value` or bare segment of a decoded nested value (no further decoding, no recursion). */
+function credSegment(seg: string): boolean {
+  const eq = seg.indexOf('=');
+  return eq === -1 ? suspectValue(seg) : NAME_RE.test(seg.slice(0, eq)) || suspectValue(seg.slice(eq + 1));
+}
+/** A decoded value that carries a nested query (`?`, `&` or `=`) is a credential when any of its
+ *  `[?&]`-separated segments is one (C6 v3). `q=a=b` or `q=1' or '1'='1` is not; `next=/r?token=x` is. */
+const nestedCred = (d: string) => /[?&=]/.test(d) && d.split(/[?&]/).some(credSegment);
+
+/** Replaces credential-looking query parts with ~r, preserving structure and order (C6 v3). The
+ *  string is split on `&`, never URL-parsed. Each part's name and value are percent-decoded
+ *  (decodeAll) before testing. `name=value` → `name=~r` when the name looks like a credential, the
+ *  value looks like one, or the value holds a nested query with a credential segment (nestedCred;
+ *  replaced whole, so payloads like `q=1' or '1'='1` stay visible to the scorer). A bare part (no
+ *  `=`) → `~r` when it looks like a credential value or holds a credential segment. Either half still
+ *  encoded after 4 decode passes counts as a credential. Used for both the request's own `q` and the
+ *  Referer (scrubUrl). */
 export function scrubQuery(query: string | null | undefined): string {
   if (!query || query.length <= 1) return query || '';
   const lead = query.startsWith('?') ? '?' : '';
   const parts = (lead ? query.slice(1) : query).split('&');
   return lead + parts.map((p) => {
     const eq = p.indexOf('=');
-    if (eq === -1) return p;
-    const name = p.slice(0, eq), value = p.slice(eq + 1);
-    return NAME_RE.test(name) || suspectValue(value) ? `${name}=~r` : p;
+    if (eq === -1) { const d = decodeAll(p); return d === null || suspectValue(d) || nestedCred(d) ? '~r' : p; }
+    const name = p.slice(0, eq), dn = decodeAll(name), dv = decodeAll(p.slice(eq + 1));
+    return dn === null || dv === null || NAME_RE.test(dn) || suspectValue(dv) || nestedCred(dv) ? `${name}=~r` : p;
   }).join('&');
+}
+
+/** A URL (a Referer) with its query and fragment run through scrubQuery (camada-all-ijsa); the
+ *  scheme, host and path are kept as they are. The path is left alone on purpose: it gets the same
+ *  treatment as the request's own path `p` (none). A same-origin Referer's path already shipped as `p`
+ *  on that page's own event, and a cross-origin one carries only the origin under the browsers'
+ *  default Referrer-Policy, so scrubbing it here would hide nothing that is not already sent. */
+export function scrubUrl(url: string | null | undefined): string | null {
+  if (url == null) return null;
+  const hash = url.indexOf('#');
+  const head = hash === -1 ? url : url.slice(0, hash);
+  const frag = hash === -1 ? null : url.slice(hash + 1);
+  const q = head.indexOf('?');
+  const scrubbed = q === -1 ? head : head.slice(0, q) + scrubQuery(head.slice(q));
+  return frag === null ? scrubbed : scrubbed + '#' + scrubQuery(frag);
 }
 
 /** Body shape only: field names and byte sizes, never values. One level deep. */

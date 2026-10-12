@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `resolveClientIp` in `cidrs` mode (also the dashboard's Cloudflare option) no longer believes
+  `X-Forwarded-For` from a socket peer that is not a trusted proxy: such a peer is the client.
+  Before this, anyone reaching the origin directly could pick their own client IP, slip past an
+  IP block or get another IP blocked. A loopback peer (127.0.0.0/8, `::1`, `::ffff:127.x.x.x`)
+  counts as a trusted hop, so local front ends (App Engine) keep working unchanged. With no peer
+  (`resolveClientIp(null, …)`) the walk is unchanged and trusts the host's edge. (camada-all-yfc6)
+- `X-Forwarded-For` entries with a port (`203.0.113.66:51234`, `[2001:db8::66]:51234`, as Azure
+  Application Gateway writes them) now resolve to the address in every mode instead of falling
+  back to the proxy's own IP. A malformed entry still falls back to the peer. (camada-all-0vho)
+- The `ref` field no longer ships the Referer verbatim: its query and fragment go through the same
+  credential scrub as the request query (`~r`), so a reset token or OAuth `code` on the previous
+  page stays in the process. New export `scrubUrl`. (camada-all-ijsa)
+- `resolveClientIp` reads an IPv4-mapped XFF entry (`::ffff:203.0.113.66`, as dual-stack proxies
+  write it) as the IPv4 address, so it no longer fails validation (every client was resolved to the
+  proxy) and a mapped Cloudflare hop is recognised as trusted. The peer's `::ffff:` prefix is now
+  removed only when a dotted quad follows (`::ffff:7f00:1` is no longer cut to `7f00:1`).
+  (camada-all-0vho, camada-all-yfc6)
+- The query scrub (request `q` and Referer `ref`) no longer leaks a bare credential part
+  (`?eyJ…`), a nested query (`next=/reset?token=…`, raw or percent-encoded, an encoded
+  `redirect_uri` carrying a `code`) or a percent-encoded credential name (`%74oken=`): names and
+  values are percent-decoded (up to 4 passes) before testing, bare parts are tested as values, and a
+  value that decodes to contain `?` or `=` is replaced whole. (camada-all-ijsa)
+- The nested-query rule no longer drops every value that decodes to contain `?` or `=`, which hid
+  SQLi/XSS payloads (`id=1' or '1'='1`, `<img src=x onerror=…>`) from the analysis: such a value is
+  split on `?`/`&` and replaced only when one of its segments is a credential. It now also catches a
+  credential behind an encoded `&` (`x=foo%26<JWT>`). (camada-all-ijsa)
+- `resolveClientIp` always returns a valid IP or null: a peer that is not a valid IP (`/run/app.sock`,
+  `ip:port`, `@`, a zone id) now gives null instead of being returned verbatim. XFF entries are
+  trimmed of space and tab only (an NBSP-padded entry is invalid), an IPv6 address with a single
+  leading or trailing `:` is invalid, and an invalid XFF entry is never a trusted hop.
+  (camada-all-yfc6, camada-all-0vho)
+- Shared conformance fixtures for these cases, for every server SDK: `test/fixtures/ip/resolve.json`,
+  `test/fixtures/redact/referer.json` and `test/fixtures/redact/query.json` (contract C6 v3).
+
 ## 0.5.1 (2026-10-09; follows 0.5.0)
 
 ### Fixed
