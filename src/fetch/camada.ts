@@ -15,7 +15,7 @@ import { guarded, guardedAsync, logRateLimited } from '../guarded.js';
 import { onBodyDone, copyResponse } from '../body.js';
 import { readBodyCapped } from '../body-cap.js';
 import { createChallengeAsync, type AsyncChallengeKit } from '../challenge/verify-async.js';
-import { challengePage } from '../challenge/page.js';
+import { challengePage, challengePageCsp } from '../challenge/page.js';
 import { challengeCookie, safeReturnTo, wantsHtml, parseFormBody, CHALLENGE_COOKIE } from '../challenge/format.js';
 import { DEFAULT_SNAPSHOT_VERSION, type Tap } from '../constants.js';
 import { resolveFetchEnv, type FetchCamadaOptions, type ResolvedFetchEnv } from './env.js';
@@ -257,7 +257,11 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     }
     const html = challengePage({ nonce: await eng.kit.nonce(ip, Date.now()), action: challengePath, to: safeReturnTo(target) });
     return new Response(html, {
-      status: 403, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-camada-challenge': '1' },
+      status: 403,
+      headers: {
+        'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-camada-challenge': '1',
+        'content-security-policy': challengePageCsp(),   // the page's own policy (its inline solver and style by hash), never the app's (camada-all-mwpo)
+      },
     });
   }
 
@@ -273,7 +277,9 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     const now = Date.now();
     if (!(await eng.kit.verify(ip, now, form.nonce, form.solution))) {
       const html = challengePage({ nonce: await eng.kit.nonce(ip, now), action: challengePath, to });
-      return new Response(html, { status: 403, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
+      return new Response(html, {
+        status: 403, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': challengePageCsp() },
+      });
     }
     const ev = buildEvent(req, url.pathname, '', ip, sid, facts);
     ev.st = 200;
