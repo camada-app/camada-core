@@ -15,3 +15,4 @@ jobs:
       - run: npm run build
       - run: npm run check
       - run: npm test
+      - run: npx -y @arethetypeswrong/cli@0.18.5 --pack .
