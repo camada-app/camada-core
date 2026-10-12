@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- `EventQueue.stop()` during a 429 hold no longer throws the held rows away with the retry timer:
+  it force-drains them like the exit flush (sent, or counted in `dropped` if the send still fails)
+  and returns a promise that settles when that drain does. (camada-all-a4m9)
+- A `waitUntil` that throws (called outside its request, say) no longer makes `EventQueue.flush()`
+  throw synchronously, which in the fetch adapters' `ship()` could fail a block or challenge open.
+  The rows still ship. (camada-all-a4m9)
 - The fetch adapters' challenge page (`@camada/core/fetch`: served, and re-issued after a wrong
   answer) sends `Content-Security-Policy: challengePageCsp()`, the page's own policy allowing only
   its inline solver and style by hash. bun, deno, nuxt, remix and sveltekit get it from here.
