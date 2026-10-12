@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `challengePageCsp(bits?)`: the `Content-Security-Policy` to send with `challengePage({ bits })`.
+  It allows only the page's inline solver and style, by `'sha256-…'` hash (computed
+  synchronously, cached per `bits`), plus `default-src 'none'; base-uri 'none';
+  frame-ancestors 'self'`. It has no `form-action`, because browsers apply that to the redirects
+  after the verify POST too. Send it as the page's only CSP and remove any
+  `Content-Security-Policy` / `Content-Security-Policy-Report-Only` the app set earlier
+  (camada-all-mwpo).
+
+### Changed
+
+- The challenge page's inline solver no longer embeds the nonce. It reads it from the form's
+  hidden `nonce` input (`id="camada-n"`), so the script is the same for every request at a given
+  `bits` and a CSP hash can allow it. Ports that copy the page or pin its script hash must follow
+  (camada-all-mwpo).
+
 ## 0.5.1 (2026-10-09; follows 0.5.0)
 
 ### Fixed
