@@ -26,8 +26,17 @@
   `redirect_uri` carrying a `code`) or a percent-encoded credential name (`%74oken=`): names and
   values are percent-decoded (up to 4 passes) before testing, bare parts are tested as values, and a
   value that decodes to contain `?` or `=` is replaced whole. (camada-all-ijsa)
-- Shared conformance fixtures for these cases, for every server SDK: `test/fixtures/ip/resolve.json`
-  and `test/fixtures/redact/referer.json` (contract C6 v2).
+- The nested-query rule no longer drops every value that decodes to contain `?` or `=`, which hid
+  SQLi/XSS payloads (`id=1' or '1'='1`, `<img src=x onerror=…>`) from the analysis: such a value is
+  split on `?`/`&` and replaced only when one of its segments is a credential. It now also catches a
+  credential behind an encoded `&` (`x=foo%26<JWT>`). (camada-all-ijsa)
+- `resolveClientIp` always returns a valid IP or null: a peer that is not a valid IP (`/run/app.sock`,
+  `ip:port`, `@`, a zone id) now gives null instead of being returned verbatim. XFF entries are
+  trimmed of space and tab only (an NBSP-padded entry is invalid), an IPv6 address with a single
+  leading or trailing `:` is invalid, and an invalid XFF entry is never a trusted hop.
+  (camada-all-yfc6, camada-all-0vho)
+- Shared conformance fixtures for these cases, for every server SDK: `test/fixtures/ip/resolve.json`,
+  `test/fixtures/redact/referer.json` and `test/fixtures/redact/query.json` (contract C6 v3).
 
 ## 0.5.1 (2026-10-09; follows 0.5.0)
 
