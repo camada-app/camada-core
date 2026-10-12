@@ -112,10 +112,12 @@ const trustedProxy = (e: Engine): TrustedProxyConfig | null =>
 
 const beaconEnabled = (e: Engine): boolean => e.snap.config?.beacon !== false;   // tenant switch; a cold engine serves
 
-/** Push then flush through `waitUntil` — the one rule every row (wire event, beacon, track()) follows. */
+/** Push, then flush at once only where delivery depends on it: the host handed a real `waitUntil`
+ *  (Workers-class: the isolate needs the flush inside it) or the engine is lazy (no timer exists).
+ *  A long-lived timer-mode host just pushes; the interval and exit flush batch (camada-all-7u3r). */
 function ship(e: Engine, ev: unknown, waitUntil: WaitUntil): void {
   e.queue.push(ev);
-  e.queue.flush(waitUntil);
+  if (waitUntil !== noWait || e.env.mode === 'lazy') e.queue.flush(waitUntil);
 }
 
 /** Edits `res.headers` in place, or on a faithful copy (see copyResponse) when its headers are

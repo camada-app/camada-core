@@ -123,6 +123,7 @@ export class SnapshotClient {
     if (res.status !== 200 && res.status !== 204 && res.status !== 304) {   // 401/5xx: keep what we have, pace the next poll
       this.fail(res.status, res.headers.get('retry-after'));
       void res.body?.cancel().catch(() => {});   // free the connection; edge-analyst's 401 carries a body
+      logRateLimited(new Error(`camada: /snapshot answered ${res.status}`));   // a bad key must not be silent (camada-all-a4m9)
       return;
     }
     this.notBefore = 0;
