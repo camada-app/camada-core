@@ -2,7 +2,7 @@
 // the app, for any client, so their size caps must bound memory. A length-less (chunked) body is
 // read through a reader and cut off once the running byte count passes the cap; the source
 // stream is cancelled and at most cap + one chunk is ever pulled from it.
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { readBodyCapped } from '../src/index.js';
 import { createFetchCamada, type FetchCamada } from '../src/fetch.js';
 import { TAP_BUN } from '../src/constants.js';
@@ -64,6 +64,18 @@ describe('readBodyCapped', () => {
     expect(await readBodyCapped(req(), 6)).toBe('ééé');
   });
 
+  it('a client that aborts mid-upload (the read rejects) gives null, quietly: no throw, no log', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let n = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(ctrl) { if (n++ === 0) ctrl.enqueue(new Uint8Array(8)); else ctrl.error(new TypeError('terminated')); },
+    }, { highWaterMark: 0 });
+    try {
+      expect(await readBodyCapped(streamed(stream), 1024)).toBeNull();
+      expect(log).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); }
+  });
+
   it('decodes a multi-byte character split across chunks', async () => {
     const bytes = new TextEncoder().encode('aé');   // 61 c3 a9
     const body = new ReadableStream<Uint8Array>({
@@ -107,6 +119,16 @@ describe('createFetchCamada caps streamed bodies (camada-all-4u4i)', () => {
   it('challenge verify counts bytes: 2100 two-byte characters (4200 bytes) are over the 4 KB cap', async () => {
     const r = await cam().before(new Request('http://app.test/__camada/challenge', { method: 'POST', body: `nonce=${'é'.repeat(2100)}` }), { ip: '9.9.9.9' });
     expect(r?.response?.status).toBe(413);
+  });
+
+  it('/_cam/fp: a client that aborts mid-upload gets 413, and nothing is logged', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const stream = new ReadableStream<Uint8Array>({ pull(ctrl) { ctrl.error(new TypeError('terminated')); } }, { highWaterMark: 0 });
+    try {
+      const r = await cam().before(streamed(stream, '/_cam/fp'), { ip: '9.9.9.9' });
+      expect(r?.response?.status).toBe(413);
+      expect(log).not.toHaveBeenCalled();
+    } finally { log.mockRestore(); }
   });
 
   it('a streamed beacon under the cap is still relayed', async () => {
