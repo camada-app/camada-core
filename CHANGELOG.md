@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Block responses (path, ip, asn, country, tls and rule blocks, the `Forbidden` 403) now send `cache-control: no-store`, like the challenge answers, so a shared cache cannot serve one visitor's block to others. (also remix, sveltekit, nuxt, bun, deno, which answer through it) (camada-all-8lp6)
 - `EventQueue.stop()` during a 429 hold no longer throws the held rows away with the retry timer:
   it force-drains them like the exit flush (sent, or counted in `dropped` if the send still fails)
   and returns a promise that settles when that drain does. (camada-all-a4m9)

@@ -372,6 +372,12 @@ describe('enforcement', () => {
     expect(events.some((e) => e.st === 403 && e.blk === 'ip4')).toBe(true);
   });
 
+  it('a block 403 carries cache-control: no-store (camada-all-8lp6; also covers remix/sveltekit/nuxt/bun/deno)', async () => {
+    const res = await call(await primed(), '/', {}, ip(BLOCKED_IP));
+    expect(res.status).toBe(403);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
   it('honours the v4 allow side over a wider block', async () => {
     const a = await primed();
     expect((await call(a, '/', {}, ip(ALLOWED_IP))).status).toBe(200);
