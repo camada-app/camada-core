@@ -16,8 +16,18 @@
 - The `ref` field no longer ships the Referer verbatim: its query and fragment go through the same
   credential scrub as the request query (`~r`), so a reset token or OAuth `code` on the previous
   page stays in the process. New export `scrubUrl`. (camada-all-ijsa)
+- `resolveClientIp` reads an IPv4-mapped XFF entry (`::ffff:203.0.113.66`, as dual-stack proxies
+  write it) as the IPv4 address, so it no longer fails validation (every client was resolved to the
+  proxy) and a mapped Cloudflare hop is recognised as trusted. The peer's `::ffff:` prefix is now
+  removed only when a dotted quad follows (`::ffff:7f00:1` is no longer cut to `7f00:1`).
+  (camada-all-0vho, camada-all-yfc6)
+- The query scrub (request `q` and Referer `ref`) no longer leaks a bare credential part
+  (`?eyJ…`), a nested query (`next=/reset?token=…`, raw or percent-encoded, an encoded
+  `redirect_uri` carrying a `code`) or a percent-encoded credential name (`%74oken=`): names and
+  values are percent-decoded (up to 4 passes) before testing, bare parts are tested as values, and a
+  value that decodes to contain `?` or `=` is replaced whole. (camada-all-ijsa)
 - Shared conformance fixtures for these cases, for every server SDK: `test/fixtures/ip/resolve.json`
-  and `test/fixtures/redact/referer.json`.
+  and `test/fixtures/redact/referer.json` (contract C6 v2).
 
 ## 0.5.1 (2026-10-09; follows 0.5.0)
 
