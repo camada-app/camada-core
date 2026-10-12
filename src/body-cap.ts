@@ -10,7 +10,8 @@ const cancelQuietly = (s: { cancel(): Promise<void> } | null | undefined): void 
 };
 
 /**
- * The request body as UTF-8 text when it is at most `max` bytes, else `null` (answer 413). A
+ * The request body as UTF-8 text when it is at most `max` bytes, else `null` (answer 413; also
+ * when the client aborts mid-upload, which is not logged). A
  * declared Content-Length over `max` is rejected before any byte is read; a body without one is
  * cut off, and its stream cancelled, as soon as the running byte count passes `max`.
  */
@@ -26,7 +27,13 @@ export async function readBodyCapped(req: Request, max: number): Promise<string 
   const chunks: Uint8Array[] = [];
   let n = 0;
   for (;;) {
-    const { done, value } = await reader.read();
+    let r: ReadableStreamReadResult<Uint8Array>;
+    try { r = await reader.read(); } catch {
+      // The client went away mid-upload: nothing to answer and nothing worth a log line.
+      cancelQuietly(reader);
+      return null;
+    }
+    const { done, value } = r;
     if (done) break;
     n += value.byteLength;
     if (n > max) {

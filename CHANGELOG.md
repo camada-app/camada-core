@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `readBodyCapped(req, max)`: the body as text when it is at most `max` bytes, else `null`. A body
+  without Content-Length is read through a reader and its stream cancelled once the byte count
+  passes the cap, so at most cap + one chunk is held. A client that aborts mid-upload also gives
+  `null`, without a log line.
+
+### Fixed
+
+- `@camada/core/fetch`: a chunked POST to `/_cam/fp` or the challenge path is cut off at the 32 KB /
+  4 KB cap instead of being read whole first. The client sees `413`, or a connection reset where the
+  host server stops reading the upload (Node). The challenge cap now counts bytes, not UTF-16 units
+  (camada-all-4u4i).
+
 ## 0.5.1 (2026-10-09; follows 0.5.0)
 
 ### Fixed
