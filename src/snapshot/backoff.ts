@@ -5,7 +5,7 @@ const FLOOR_SECONDS = 5;
 
 /** delta-seconds only (`^[0-9]+$` after trimming SP/HTAB). Anything else, HTTP-dates included, reads as 0
  *  so the floor applies. An all-digit value too long to be exact reads as huge (the cap then wins). */
-function parseRetryAfter(v: string | null): number {
+export function parseRetryAfter(v: string | null): number {
   const s = (v ?? '').replace(/^[ \t]+|[ \t]+$/g, '');
   if (!/^[0-9]+$/.test(s)) return 0;
   return s.length > 9 ? 1e9 : Number(s);

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { EventQueue } from '../src/index.js';
 
 const q = (fetchImpl: typeof fetch, opts = {}) =>
@@ -128,5 +128,157 @@ describe('exit flush', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('EventQueue non-2xx answers (camada-all-a4m9)', () => {
+  let base = 4_000_000_000_000;   // logRateLimited is a module-wide once-a-minute gate: every test starts a minute+ later
+  const errSpy = () => vi.spyOn(console, 'error').mockImplementation(() => {});
+  const start = () => { vi.useFakeTimers(); vi.setSystemTime((base += 3_600_000)); return errSpy(); };
+  const lines = (spy: ReturnType<typeof errSpy>) => spy.mock.calls.map((c) => String(c[1]));
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });   // a failing assertion must not leak fake timers or the console spy into the next test
+
+  it('logs `/e answered 401`, counts the batch as dropped and cancels the body', async () => {
+    const spy = start();
+    let cancelled = false;
+    const body = new ReadableStream({ cancel() { cancelled = true; } });
+    const queue = q(async () => new Response(body, { status: 401 }));
+    queue.push({ n: 1 }); queue.push({ n: 2 });
+    await queue.flush();
+    expect(lines(spy)).toEqual(['camada: /e answered 401']);
+    expect(queue.dropped).toBe(2);
+    expect(queue.size).toBe(0);
+    expect(cancelled).toBe(true);
+    queue.stop();
+  });
+
+  it('a 5xx is dropped and logged the same way', async () => {
+    const spy = start();
+    const queue = q(async () => new Response(null, { status: 503 }));
+    queue.push({}); await queue.flush();
+    expect(lines(spy)).toEqual(['camada: /e answered 503']);
+    expect(queue.dropped).toBe(1);
+    queue.stop();
+  });
+
+  it('a 2xx logs nothing and drops nothing', async () => {
+    const spy = start();
+    const queue = q(async () => new Response(null, { status: 202 }));
+    queue.push({}); await queue.flush();
+    expect(spy).not.toHaveBeenCalled();
+    expect(queue.dropped).toBe(0);
+    queue.stop();
+  });
+
+  it('a 429 holds the batch at the head, retries after retry-after, and loses nothing', async () => {
+    const spy = start();
+    const posts: unknown[][] = [];
+    let limited = true;
+    const queue = q(async (_u, init) => {
+      posts.push(JSON.parse(init!.body as string));
+      return limited ? new Response(null, { status: 429, headers: { 'retry-after': '7' } }) : new Response(null, { status: 202 });
+    });
+    queue.push({ n: 1 }); queue.push({ n: 2 });
+    await queue.flush();
+    expect(lines(spy)).toEqual(['camada: /e answered 429']);
+    expect(posts).toHaveLength(1);
+    expect(queue.dropped).toBe(0);
+    expect(queue.size).toBe(2);
+    queue.push({ n: 3 });                       // push() is never blocked by the hold
+    expect(queue.size).toBe(3);
+    await queue.flush();                         // still held: no POST
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(posts).toHaveLength(1);
+    limited = false;
+    await vi.advanceTimersByTimeAsync(1_500);    // retry-after elapsed: the hold timer drains
+    expect(posts).toHaveLength(2);
+    expect(posts[1]).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]);   // original order, batch at the head
+    expect(queue.size).toBe(0);
+    expect(queue.dropped).toBe(0);
+    queue.stop();
+  });
+
+  it('while held, maxQueue still drops the oldest', async () => {
+    const spy = start();
+    const queue = q(async () => new Response(null, { status: 429, headers: { 'retry-after': '30' } }), { maxQueue: 3 });
+    queue.push({ n: 1 }); queue.push({ n: 2 }); queue.push({ n: 3 });
+    await queue.flush();
+    expect(queue.size).toBe(3);
+    queue.push({ n: 4 });
+    expect(queue.size).toBe(3);
+    expect(queue.dropped).toBe(1);
+    queue.stop();
+  });
+
+  it('a 429 without a usable retry-after still holds (1 s floor) instead of spinning', async () => {
+    const spy = start();
+    let n = 0;
+    const queue = q(async () => { n++; return new Response(null, { status: 429, headers: { 'retry-after': 'Wed, 21 Oct 2026 07:28:00 GMT' } }); });
+    queue.push({}); await queue.flush();
+    expect(n).toBe(1);
+    await vi.advanceTimersByTimeAsync(900);
+    expect(n).toBe(1);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(n).toBe(2);
+    queue.stop();
+  });
+  it('a fetchImpl that resolves to a non-Response never rejects flush() (R6-1)', async () => {
+    start();
+    const queue = q((async () => undefined) as unknown as typeof fetch);
+    queue.push({});
+    await expect(queue.flush()).resolves.toBeUndefined();
+    expect(queue.size).toBe(0);
+    queue.stop();
+  });
+
+  it('a backward clock step does not stall a 429 hold (R6-2)', async () => {
+    start();
+    let n = 0;
+    const queue = q(async () => { n++; return n === 1 ? new Response(null, { status: 429, headers: { 'retry-after': '1' } }) : new Response(null, { status: 202 }); });
+    queue.push({}); await queue.flush();
+    expect(n).toBe(1);
+    vi.setSystemTime(Date.now() - 3_600_000);
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(n).toBe(2);
+    expect(queue.size).toBe(0);
+    queue.stop();
+  });
+
+  it('an exit flush ignores a 429 hold and retries once (R6-3)', async () => {
+    start();
+    let n = 0;
+    const queue = q(async () => { n++; return n === 1 ? new Response(null, { status: 429, headers: { 'retry-after': '30' } }) : new Response(null, { status: 202 }); });
+    queue.installNodeExitFlush();
+    queue.push({}); queue.push({});
+    await queue.flush();
+    expect(n).toBe(1);
+    process.emit('beforeExit', 0);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(n).toBe(2);
+    expect(queue.size).toBe(0);
+    queue.stop();
+  });
+
+  it('an exit flush that still fails counts the held rows as dropped (R6-3)', async () => {
+    start();
+    const queue = q(async () => new Response(null, { status: 429, headers: { 'retry-after': '30' } }));
+    queue.installNodeExitFlush();
+    queue.push({}); queue.push({});
+    await queue.flush();
+    expect(queue.dropped).toBe(0);
+    process.emit('beforeExit', 0);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(queue.dropped).toBe(2);
+    expect(queue.size).toBe(0);
+    queue.stop();
+  });
+
+  it('a 2xx body is cancelled too (R6-7)', async () => {
+    start();
+    let cancelled = false;
+    const queue = q(async () => new Response(new ReadableStream({ cancel() { cancelled = true; } }), { status: 202 }));
+    queue.push({}); await queue.flush();
+    expect(cancelled).toBe(true);
+    queue.stop();
   });
 });

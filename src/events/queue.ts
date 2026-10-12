@@ -6,6 +6,9 @@
 // with instance count x flush cadence — not with traffic. Beacons ride the same batch as sig:1 rows.
 
 import { logRateLimited } from '../guarded.js';
+import { parseRetryAfter } from '../snapshot/backoff.js';
+
+const HOLD_MIN_MS = 1_000, HOLD_MAX_MS = 60_000;   // a 429 holds the queue for retry-after, clamped so a junk or huge value neither spins nor silences ingest for long
 
 export interface EventQueueOptions {
   url: string;                    // ingest base, e.g. https://analyst.example.com
@@ -29,6 +32,8 @@ export class EventQueue {
   private inflight: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private exitInstalled = false;
+  private heldUntil = 0;           // a 429 holds the head batch until then (ms epoch)
+  private holdTimer: ReturnType<typeof setTimeout> | null = null;
   dropped = 0;                    // debug counter, not an API promise
   private readonly opts: Required<Omit<EventQueueOptions, 'fetchImpl' | 'sdk'>> & { fetchImpl: typeof fetch; sdk?: string };
 
@@ -55,16 +60,24 @@ export class EventQueue {
   /** Drains the queue, ≤1000 events per POST (the server slices there); single-in-flight;
    *  the returned promise never rejects. Full drain matters for the exit flush. */
   flush(waitUntil?: (p: Promise<unknown>) => void): Promise<void> {
+    return this.drain(false, waitUntil);
+  }
+
+  /** force = the process is exiting: ignore a 429 hold (nobody will be here when it ends) and, if the
+   *  send still fails, count the rows as dropped instead of re-holding them. */
+  private drain(force: boolean, waitUntil?: (p: Promise<unknown>) => void): Promise<void> {
     if (this.inflight) { waitUntil?.(this.inflight); return this.inflight; }   // edge runtimes must still hold the isolate open
-    if (this.q.length === 0) return Promise.resolve();
+    const left = this.heldUntil - Date.now();
+    if (this.q.length === 0 || (!force && left > 0 && left <= HOLD_MAX_MS)) return Promise.resolve();   // held after a 429: the hold timer retries; a hold longer than the clamp means the wall clock stepped back
     this.inflight = (async () => {
       const headers: Record<string, string> = { 'x-tenant': this.opts.token, 'content-type': 'application/json' };
       if (this.opts.sdk) headers['x-camada-sdk'] = this.opts.sdk;
       const send = this.opts.fetchImpl;   // a local, so the call has no receiver even if a caller handed us a bare global
       while (this.q.length > 0) {
         const batch = this.q.splice(0, 1000);
+        let res: Response;
         try {
-          await send(`${this.opts.url}/e`, {
+          res = await send(`${this.opts.url}/e`, {
             method: 'POST',
             headers,
             body: JSON.stringify(batch),
@@ -75,15 +88,35 @@ export class EventQueue {
           // Dropping telemetry is by design, doing it silently is not: a mount that can never
           // reach ingest looks identical to a healthy one otherwise (finding 030).
           logRateLimited(err);
+          continue;
         }
+        void res?.body?.cancel().catch(() => {});   // free the connection; the answer's body is never needed
+        const status = res?.status;   // a custom fetchImpl may resolve to a non-Response
+        if (status !== undefined && status >= 200 && status < 300) continue;
+        logRateLimited(new Error(`camada: /e answered ${status}`));   // 401/403/413/5xx: same signal as a thrown error (camada-all-a4m9)
+        if (status === 429 && !force) {
+          // The analyst's per-tenant ingest limit: nothing is lost yet. Put the batch back at the head,
+          // hold until retry-after, and stop this drain. push() keeps working (drop-oldest at maxQueue).
+          this.q.unshift(...batch);
+          const over = this.q.length - this.opts.maxQueue;
+          if (over > 0) { this.q.splice(0, over); this.dropped += over; }
+          const ms = Math.min(Math.max(parseRetryAfter(res.headers.get('retry-after')) * 1000, HOLD_MIN_MS), HOLD_MAX_MS);
+          this.heldUntil = Date.now() + ms;
+          if (this.holdTimer) clearTimeout(this.holdTimer);
+          this.holdTimer = setTimeout(() => { this.holdTimer = null; this.heldUntil = 0; void this.flush(); }, ms);   // the timer, not the wall clock, ends the hold
+          (this.holdTimer as { unref?: () => void }).unref?.();
+          return;
+        }
+        this.dropped += batch.length;
       }
-    })().finally(() => { this.inflight = null; });
+    })().catch(logRateLimited).finally(() => { this.inflight = null; });
     waitUntil?.(this.inflight);
     return this.inflight;
   }
 
   stop(): void {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    if (this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
     for (const [ev, fn] of this.exitHandlers.splice(0)) {
       ((globalThis as { process?: NodeJS.Process }).process)?.removeListener(ev, fn);
     }
@@ -101,13 +134,13 @@ export class EventQueue {
     const proc = (globalThis as { process?: NodeJS.Process }).process;
     if (!proc?.on) return;
     this.exitInstalled = true;
-    const onBeforeExit = () => { void this.flush(); };
+    const onBeforeExit = () => { void this.drain(true); };
     proc.on('beforeExit', onBeforeExit);
     this.exitHandlers.push(['beforeExit', onBeforeExit]);
     for (const sig of ['SIGTERM', 'SIGINT'] as const) {
       const handler = () => {
         proc.removeListener(sig, handler);
-        if (proc.listenerCount(sig) > 0) { void this.flush(); return; }   // the app owns shutdown; just drain quietly
+        if (proc.listenerCount(sig) > 0) { void this.drain(true); return; }   // the app owns shutdown; just drain quietly
         const done = () => {
           try {
             proc.kill(proc.pid, sig);   // re-raise: with this handler gone, the default action exits with the signal's status
@@ -115,7 +148,7 @@ export class EventQueue {
             proc.exit(128 + (sig === 'SIGINT' ? 2 : 15));   // Deno without --allow-run refuses process.kill (NotCapable); exit with the same status
           }
         };
-        Promise.race([this.flush(), new Promise((r) => setTimeout(r, 500))]).then(done, done);
+        Promise.race([this.drain(true), new Promise((r) => setTimeout(r, 500))]).then(done, done);
       };
       proc.on(sig, handler);
       this.exitHandlers.push([sig, handler]);
