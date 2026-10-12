@@ -26,6 +26,21 @@ export function scrubQuery(query: string | null | undefined): string {
   }).join('&');
 }
 
+/** A URL (a Referer) with its query and fragment run through scrubQuery (camada-all-ijsa); the
+ *  scheme, host and path are kept as they are. The path is left alone on purpose: it gets the same
+ *  treatment as the request's own path `p` (none). A same-origin Referer's path already shipped as `p`
+ *  on that page's own event, and a cross-origin one carries only the origin under the browsers'
+ *  default Referrer-Policy, so scrubbing it here would hide nothing that is not already sent. */
+export function scrubUrl(url: string | null | undefined): string | null {
+  if (url == null) return null;
+  const hash = url.indexOf('#');
+  const head = hash === -1 ? url : url.slice(0, hash);
+  const frag = hash === -1 ? null : url.slice(hash + 1);
+  const q = head.indexOf('?');
+  const scrubbed = q === -1 ? head : head.slice(0, q) + scrubQuery(head.slice(q));
+  return frag === null ? scrubbed : scrubbed + '#' + scrubQuery(frag);
+}
+
 /** Body shape only: field names and byte sizes, never values. One level deep. */
 export function bodyShape(obj: unknown): Record<string, number> | null {
   if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return null;
