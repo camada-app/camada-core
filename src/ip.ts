@@ -45,11 +45,11 @@ function stripPort(e: string): string {
   return parseIp4(host) >= 0 && PORT_RE.test(e.slice(colon)) ? host : e;
 }
 
-/** 127.0.0.0/8, ::1, and the v4-mapped forms of 127/8 (camada-all-yfc6, decision D1). */
+/** 127.0.0.0/8 or ::1 (camada-all-yfc6, decision D1). The peer's `::ffff:127.x.x.x` form is already
+ *  reduced to the dotted quad by resolveClientIp. */
 function isLoopback(ip: string): boolean {
   if (ip.indexOf(':') === -1) { const n = parseIp4(ip); return n >= 0 && n >>> 24 === 127; }
-  if (!parseIp6Into(ip, W, G)) return false;
-  return W[0] === 0 && W[1] === 0 && ((W[2] === 0 && W[3] === 1) || (W[2] === 0xffff && W[3] >>> 24 === 127));
+  return parseIp6Into(ip, W, G) && W[0] === 0 && W[1] === 0 && W[2] === 0 && W[3] === 1;
 }
 
 interface Cidr4 { v: 4; base: number; bits: number }
