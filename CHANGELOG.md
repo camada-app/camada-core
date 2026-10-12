@@ -37,6 +37,10 @@
   (camada-all-yfc6, camada-all-0vho)
 - Shared conformance fixtures for these cases, for every server SDK: `test/fixtures/ip/resolve.json`,
   `test/fixtures/redact/referer.json` and `test/fixtures/redact/query.json` (contract C6 v3).
+- `@camada/core/fetch`: a chunked POST to `/_cam/fp` or the challenge path is cut off at the 32 KB /
+  4 KB cap instead of being read whole first. The client sees `413`, or a connection reset where the
+  host server stops reading the upload (Node). The challenge cap now counts bytes, not UTF-16 units
+  (camada-all-4u4i).
 
 ### Added
 
@@ -47,6 +51,10 @@
   after the verify POST too. Send it as the page's only CSP and remove any
   `Content-Security-Policy` / `Content-Security-Policy-Report-Only` the app set earlier
   (camada-all-mwpo).
+- `readBodyCapped(req, max)`: the body as text when it is at most `max` bytes, else `null`. A body
+  without Content-Length is read through a reader and its stream cancelled once the byte count
+  passes the cap, so at most cap + one chunk is held. A client that aborts mid-upload also gives
+  `null`, without a log line.
 
 ### Changed
 
