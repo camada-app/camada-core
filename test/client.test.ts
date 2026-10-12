@@ -280,6 +280,29 @@ describe('format switch', () => {
   });
 });
 
+describe('non-2xx poll answers are logged (camada-all-a4m9)', () => {
+  it.each([401, 403, 503])('logs `/snapshot answered %i` and stays cold', async (status) => {
+    vi.useFakeTimers(); vi.setSystemTime(5_000_000_000_000 + status * 3_600_000);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const c = client(async () => new Response('nope', { status }));
+    c.ensureFresh();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(spy.mock.calls.map((x) => String(x[1]))).toEqual([`camada: /snapshot answered ${status}`]);
+    expect(c.verdict({ ip: '203.0.113.66' }).reason).toBe('cold');
+    spy.mockRestore(); c.stop(); vi.useRealTimers();
+  });
+
+  it('logs nothing on 200, 204 and 304', async () => {
+    for (const mk of [ok200, () => new Response(null, { status: 204 })]) {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const c = client(async () => mk());
+      c.ensureFresh(); await settle();
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore(); c.stop();
+    }
+  });
+});
+
 describe('poll pacing (camada-all-pbv9)', async () => {
   const { nextPollDelay } = await import('../src/snapshot/backoff.js');
   type Step = { t: number; poll: boolean; respond?: { status: number; retryAfter?: string }; after?: { cold: boolean; blocked: boolean } };

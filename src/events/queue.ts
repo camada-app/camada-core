@@ -6,6 +6,9 @@
 // with instance count x flush cadence — not with traffic. Beacons ride the same batch as sig:1 rows.
 
 import { logRateLimited } from '../guarded.js';
+import { parseRetryAfter } from '../snapshot/backoff.js';
+
+const HOLD_MIN_MS = 1_000, HOLD_MAX_MS = 60_000;   // a 429 holds the queue for retry-after, clamped so a junk or huge value neither spins nor silences ingest for long
 
 export interface EventQueueOptions {
   url: string;                    // ingest base, e.g. https://analyst.example.com
@@ -29,6 +32,8 @@ export class EventQueue {
   private inflight: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private exitInstalled = false;
+  private heldUntil = 0;           // a 429 holds the head batch until then (ms epoch)
+  private holdTimer: ReturnType<typeof setTimeout> | null = null;
   dropped = 0;                    // debug counter, not an API promise
   private readonly opts: Required<Omit<EventQueueOptions, 'fetchImpl' | 'sdk'>> & { fetchImpl: typeof fetch; sdk?: string };
 
@@ -56,15 +61,16 @@ export class EventQueue {
    *  the returned promise never rejects. Full drain matters for the exit flush. */
   flush(waitUntil?: (p: Promise<unknown>) => void): Promise<void> {
     if (this.inflight) { waitUntil?.(this.inflight); return this.inflight; }   // edge runtimes must still hold the isolate open
-    if (this.q.length === 0) return Promise.resolve();
+    if (this.q.length === 0 || Date.now() < this.heldUntil) return Promise.resolve();   // held after a 429: the hold timer retries
     this.inflight = (async () => {
       const headers: Record<string, string> = { 'x-tenant': this.opts.token, 'content-type': 'application/json' };
       if (this.opts.sdk) headers['x-camada-sdk'] = this.opts.sdk;
       const send = this.opts.fetchImpl;   // a local, so the call has no receiver even if a caller handed us a bare global
       while (this.q.length > 0) {
         const batch = this.q.splice(0, 1000);
+        let res: Response;
         try {
-          await send(`${this.opts.url}/e`, {
+          res = await send(`${this.opts.url}/e`, {
             method: 'POST',
             headers,
             body: JSON.stringify(batch),
@@ -75,7 +81,25 @@ export class EventQueue {
           // Dropping telemetry is by design, doing it silently is not: a mount that can never
           // reach ingest looks identical to a healthy one otherwise (finding 030).
           logRateLimited(err);
+          continue;
         }
+        if (res.status >= 200 && res.status < 300) continue;
+        void res.body?.cancel().catch(() => {});   // free the connection; the answer's body is never needed
+        logRateLimited(new Error(`camada: /e answered ${res.status}`));   // 401/403/413/5xx: same signal as a thrown error (camada-all-a4m9)
+        if (res.status === 429) {
+          // The analyst's per-tenant ingest limit: nothing is lost yet. Put the batch back at the head,
+          // hold until retry-after, and stop this drain. push() keeps working (drop-oldest at maxQueue).
+          this.q.unshift(...batch);
+          const over = this.q.length - this.opts.maxQueue;
+          if (over > 0) { this.q.splice(0, over); this.dropped += over; }
+          const ms = Math.min(Math.max(parseRetryAfter(res.headers.get('retry-after')) * 1000, HOLD_MIN_MS), HOLD_MAX_MS);
+          this.heldUntil = Date.now() + ms;
+          if (this.holdTimer) clearTimeout(this.holdTimer);
+          this.holdTimer = setTimeout(() => { this.holdTimer = null; void this.flush(); }, ms);
+          (this.holdTimer as { unref?: () => void }).unref?.();
+          return;
+        }
+        this.dropped += batch.length;
       }
     })().finally(() => { this.inflight = null; });
     waitUntil?.(this.inflight);
@@ -84,6 +108,7 @@ export class EventQueue {
 
   stop(): void {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    if (this.holdTimer) { clearTimeout(this.holdTimer); this.holdTimer = null; }
     for (const [ev, fn] of this.exitHandlers.splice(0)) {
       ((globalThis as { process?: NodeJS.Process }).process)?.removeListener(ev, fn);
     }
