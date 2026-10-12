@@ -26,7 +26,16 @@ export function parseTrustedProxyEnv(v: string | null | undefined): TrustedProxy
 // Reusable scratch for parseIp6Into (whose params these mirror): parsing an address is
 // synchronous and never interleaves, so one shared pair avoids per-check allocation.
 const W = new Uint32Array(4), G = new Uint16Array(8);
-const validIp = (s: string) => (s.indexOf(':') === -1 ? parseIp4(s) >= 0 : parseIp6Into(s, W, G));
+/** A plain IPv4 or IPv6 address (C6 v3). Stricter than parseIp6Into, which edge-analyst shares and
+ *  which must not drift from it: a single leading or trailing `:` (`:8:8:8`, `2001:db8::1:`) is
+ *  rejected here only. Embedded dotted quads (`::1.2.3.4`) and zone ids already fail parseIp6Into. */
+function validIp(s: string): boolean {
+  if (s.indexOf(':') === -1) return parseIp4(s) >= 0;
+  const n = s.length;
+  if (n < 2 || (s.charCodeAt(0) === 58 && s.charCodeAt(1) !== 58) || (s.charCodeAt(n - 1) === 58 && s.charCodeAt(n - 2) !== 58)) return false;
+  return parseIp6Into(s, W, G);
+}
+const OWS_RE = /^[ \t]+|[ \t]+$/g;   // HTTP optional whitespace only (SP, HTAB), never Unicode whitespace (C6 v3)
 
 const PORT_RE = /^:\d{1,5}$/;
 /** `::ffff:a.b.c.d` (any case) → `a.b.c.d`, only when a valid dotted quad follows; anything else is
@@ -96,31 +105,35 @@ function inCidr(ip: string, cidr: Cidr4 | Cidr6): boolean {
 
 /**
  * Resolves the client IP from the socket peer address and the X-Forwarded-For header per the
- * trusted-proxy config. Anything unresolvable falls back to the socket peer — fail safe.
+ * trusted-proxy config. The result is always a valid IP address or null (C6 v3), in every mode.
  *
- * XFF entries are read without a port (`ip:port`, `[v6]:port`, as Azure writes them) and with a
- * `::ffff:a.b.c.d` entry reduced to `a.b.c.d`, in every mode. Several XFF header lines are joined in
- * arrival order with `, ` by the adapter before they get here.
+ * XFF entries are trimmed of space and tab only, read without a port (`ip:port`, `[v6]:port`, as
+ * Azure writes them) and with a `::ffff:a.b.c.d` entry reduced to `a.b.c.d`, in every mode. Several
+ * XFF header lines are joined in arrival order with `, ` by the adapter before they get here.
+ *
+ * The peer is `unmap(socketAddr)` when that is a valid IP, else null; it is never trimmed or
+ * port-stripped. A non-empty peer that is not a valid IP (a unix socket path, `ip:port`, `@`, a zone
+ * id) is a peer that could not be read: the result falls back to null, never to the XFF walk.
  *
  * `cidrs` (also what the dashboard's Cloudflare option stores) walks the chain `[...xff, peer]` from
  * the right: if the socket peer is not a trusted proxy, the request did not come through one and the
  * peer IS the client — XFF is ignored, since anyone hitting the origin directly can write it.
  * A loopback peer (127.0.0.0/8, ::1, ::ffff:127.x.x.x) counts as a trusted hop: it is a local front
  * end or sidecar (App Engine's is always 127.0.0.1), and no remote client can be one. Loopback is
- * trusted only as the peer, never as an XFF entry.
- * With no peer at all (`socketAddr` null: adapters whose host exposes no socket, e.g. @camada/next)
- * the walk runs over XFF alone, as before: such adapters trust the host's network edge to have
- * written XFF, and the deployment must not let clients reach the app around that edge.
- * An empty peer is the same as null. That is for adapters with no socket concept only: an adapter
- * that has a socket but cannot read its peer for one request must not pass null (see C6 v2).
- * The peer is otherwise taken as given (only `::ffff:a.b.c.d` is reduced): a non-IP peer (a unix
- * socket path, `ip:port`, a zone id) is never trusted, so in `cidrs` mode it is returned and XFF ignored.
+ * trusted only as the peer, never as an XFF entry. An XFF entry that is not a valid IP is never a
+ * trusted hop.
+ * With no peer at all (`socketAddr` null or empty: adapters whose host exposes no socket, e.g.
+ * @camada/next, or a unix-socket listener) the walk runs over XFF alone: such adapters trust the
+ * host's network edge to have written XFF, and the deployment must not let clients reach the app
+ * around that edge. An adapter that has a socket but cannot read its peer for one request must not
+ * pass null (see C6).
  * `hops` and `vercel` trust XFF by definition and do not look at the peer.
  */
 export function resolveClientIp(socketAddr: string | null | undefined, xff: string | null | undefined, cfg?: TrustedProxyConfig | null): string | null {
-  const sock = socketAddr ? unmap(socketAddr) : null;   // Node dual-stack v4-mapped form
+  const mapped = socketAddr ? unmap(socketAddr) : null;   // Node dual-stack v4-mapped form
+  const sock = mapped !== null && validIp(mapped) ? mapped : null;
   if (!cfg || cfg.mode === 'none' || !xff) return sock;
-  const entries = xff.split(',').map((s) => unmap(stripPort(s.trim()))).filter(Boolean);
+  const entries = xff.split(',').map((s) => unmap(stripPort(s.replace(OWS_RE, '')))).filter(Boolean);
   if (!entries.length) return sock;
 
   // An out-of-range index yields undefined, which falls back to the socket below.
@@ -134,8 +147,9 @@ export function resolveClientIp(socketAddr: string | null | undefined, xff: stri
       break;
     case 'cidrs': {
       const trusted = cfg.cidrs.map(parseCidr).filter((c): c is Cidr4 | Cidr6 => c !== null);
-      const isTrusted = (ip: string) => trusted.some((t) => inCidr(ip, t));
-      if (sock !== null && !isLoopback(sock) && !isTrusted(sock)) return sock;   // the peer is the first hop
+      const isTrusted = (ip: string) => validIp(ip) && trusted.some((t) => inCidr(ip, t));
+      // the peer is the first hop; an unreadable (non-IP) peer never walks
+      if (mapped !== null && (sock === null || (!isLoopback(sock) && !isTrusted(sock)))) return sock;
       for (let i = entries.length - 1; i >= 0; i--) {
         if (!isTrusted(entries[i])) { candidate = entries[i]; break; }
       }

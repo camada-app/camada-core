@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "doc": "resolveClientIp(peer, xff, configs[config]) must equal expect. Contract: .agent-team/runs/2026-10-12-bugfix/contracts/sdk-conformance.md (C6). configs.unset is \"no config at all\".",
+  "version": 3,
+  "doc": "resolveClientIp(peer, xff, configs[config]) must equal expect. The result is always a valid IP or null. Contract: .agent-team/runs/2026-10-12-bugfix/contracts/sdk-conformance.md (C6). configs.unset is \"no config at all\".",
   "configs": {
     "unset": null,
     "none": {
@@ -657,7 +657,8 @@
       "config": "unset",
       "peer": "::ffff:zz",
       "xff": null,
-      "expect": "::ffff:zz"
+      "expect": null,
+      "note": "not reduced (no dotted quad), not a valid IP: null (v3)"
     },
     {
       "id": "loopback-peer-v4-mapped-upper",
@@ -767,8 +768,8 @@
       "config": "cloudflare",
       "peer": "fe80::1%eth0",
       "xff": "8.8.8.8",
-      "expect": "fe80::1%eth0",
-      "note": "a non-IP peer is an untrusted peer, returned verbatim"
+      "expect": null,
+      "note": "a zone-id peer is not a valid IP: null (v3)"
     },
     {
       "id": "unset-peer-zone-id",
@@ -776,7 +777,8 @@
       "config": "unset",
       "peer": "fe80::1%eth0",
       "xff": null,
-      "expect": "fe80::1%eth0"
+      "expect": null,
+      "note": "the result is a valid IP or null in every mode (v3)"
     },
     {
       "id": "loopback-peer-xff-v6-loopback-bracket-port",
@@ -818,8 +820,8 @@
       "config": "cloudflare",
       "peer": "/run/app.sock",
       "xff": "8.8.8.8",
-      "expect": "/run/app.sock",
-      "note": "non-IP peer = untrusted peer: returned verbatim, XFF ignored; never the no-peer walk"
+      "expect": null,
+      "note": "a non-null peer that is not a valid IP gives a null result (v3); it never selects the no-peer walk"
     },
     {
       "id": "cf-peer-with-port",
@@ -827,8 +829,8 @@
       "config": "cloudflare",
       "peer": "172.64.1.1:443",
       "xff": "8.8.8.8",
-      "expect": "172.64.1.1:443",
-      "note": "the peer is never port-stripped; adapters pass a bare address"
+      "expect": null,
+      "note": "the peer is never port-stripped; an ip:port peer is not a valid IP: null (v3)"
     },
     {
       "id": "cf-peer-empty-string",
@@ -838,6 +840,146 @@
       "xff": "1.2.3.4, 198.51.100.9, 172.64.1.1",
       "expect": "198.51.100.9",
       "note": "an empty peer is the same as null (no-peer adapters only)"
+    },
+    {
+      "id": "cf-peer-at-sign",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "@",
+      "xff": "8.8.8.8",
+      "expect": null,
+      "note": "Go net.SplitHostPort-style junk: an invalid peer gives null, XFF is never walked"
+    },
+    {
+      "id": "cf-peer-v4-mapped-garbage",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "::ffff:zz",
+      "xff": "8.8.8.8",
+      "expect": null
+    },
+    {
+      "id": "cf-peer-trailing-space",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1 ",
+      "xff": "8.8.8.8",
+      "expect": null,
+      "note": "the peer is never trimmed"
+    },
+    {
+      "id": "unset-peer-unix-socket",
+      "ticket": "yfc6",
+      "config": "unset",
+      "peer": "/run/app.sock",
+      "xff": null,
+      "expect": null
+    },
+    {
+      "id": "hops-invalid-peer-valid-xff",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "/run/app.sock",
+      "xff": "203.0.113.66",
+      "expect": "203.0.113.66",
+      "note": "hops does not look at the peer"
+    },
+    {
+      "id": "hops-invalid-peer-invalid-xff",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "/run/app.sock",
+      "xff": "not-an-ip",
+      "expect": null,
+      "note": "fallback to an invalid peer is null"
+    },
+    {
+      "id": "unset-peer-v6-embedded-v4",
+      "ticket": "yfc6",
+      "config": "unset",
+      "peer": "64:ff9b::198.51.100.9",
+      "xff": null,
+      "expect": null,
+      "note": "embedded dotted quads are not valid IPv6 here (only ::ffff:a.b.c.d is reduced)"
+    },
+    {
+      "id": "xff-ipv6-leading-colon",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": ":8:8:8",
+      "expect": "169.254.130.1",
+      "note": "a single leading colon is not valid IPv6"
+    },
+    {
+      "id": "xff-ipv6-trailing-colon",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "2001:db8::1:",
+      "expect": "169.254.130.1",
+      "note": "a single trailing colon is not valid IPv6"
+    },
+    {
+      "id": "cf-xff-ipv6-trailing-colon-not-trusted",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "198.51.100.9, 2606:4700::1:",
+      "expect": "172.64.1.1",
+      "note": "an invalid entry is never a trusted hop: it is the candidate, fails validation, peer wins"
+    },
+    {
+      "id": "xff-ipv6-embedded-v4",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "::1.2.3.4",
+      "expect": "169.254.130.1",
+      "note": "embedded dotted quad: invalid"
+    },
+    {
+      "id": "xff-ipv6-embedded-v4-nat64",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "64:ff9b::198.51.100.9",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "xff-ipv6-embedded-v4-long-mapped",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "0:0:0:0:0:ffff:1.2.3.4",
+      "expect": "169.254.130.1",
+      "note": "only the literal ::ffff: prefix is reduced"
+    },
+    {
+      "id": "xff-nbsp-not-trimmed",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66 ",
+      "expect": "169.254.130.1",
+      "note": "only space and tab are trimmed"
+    },
+    {
+      "id": "xff-nbsp-only-entry-counts",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66, ",
+      "expect": "169.254.130.1",
+      "note": "an NBSP-only entry is not empty: it counts, fails validation, peer wins"
+    },
+    {
+      "id": "xff-cr-not-trimmed",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66\r",
+      "expect": "169.254.130.1"
     }
   ]
 }
