@@ -241,7 +241,7 @@ describe('EventQueue non-2xx answers (camada-all-a4m9)', () => {
   it('a 429 without a usable retry-after still holds (1 s floor) instead of spinning', async () => {
     const spy = start();
     let n = 0;
-    const queue = q(async () => { n++; return new Response(null, { status: 429, headers: { 'retry-after': 'Wed, 21 Oct 2026 07:28:00 GMT' } }); });
+    const queue = q(async () => { n++; return new Response(null, { status: 429, headers: { 'retry-after': 'soon' } }); });
     queue.push({}); await queue.flush();
     expect(n).toBe(1);
     await vi.advanceTimersByTimeAsync(900);
@@ -250,6 +250,43 @@ describe('EventQueue non-2xx answers (camada-all-a4m9)', () => {
     expect(n).toBe(2);
     queue.stop();
   });
+  it('a 429 retry-after given as an HTTP-date holds until that date (RFC 9110; camada-all-a4m9)', async () => {
+    start();
+    let n = 0;
+    vi.setSystemTime(Date.now() + 700);   // mid-second: the date's 1 s resolution must not cut the hold short
+    const t0 = Date.now();
+    const until = new Date(t0 + 30_000).toUTCString();
+    const queue = q(async () => { n++; return n === 1 ? new Response(null, { status: 429, headers: { 'retry-after': until } }) : new Response(null, { status: 202 }); });
+    queue.push({}); await queue.flush();
+    await vi.advanceTimersByTimeAsync(29_900);
+    expect(n).toBe(1);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(n).toBe(2);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(30_000);
+    expect(queue.size).toBe(0);
+    queue.stop();
+  });
+
+  it('an HTTP-date retry-after is clamped like delta-seconds: past = 1 s floor, far future = 60 s cap', async () => {
+    start();
+    let n = 0;
+    let ra = new Date(Date.now() - 60_000).toUTCString();
+    const queue = q(async () => { n++; return new Response(null, { status: 429, headers: { 'retry-after': ra } }); });
+    queue.push({}); await queue.flush();
+    await vi.advanceTimersByTimeAsync(900);
+    expect(n).toBe(1);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(n).toBe(2);
+    ra = new Date(Date.now() + 3_600_000).toUTCString();
+    await vi.advanceTimersByTimeAsync(1_100);   // n=3 answered with the far-future date
+    expect(n).toBe(3);
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(n).toBe(3);
+    await vi.advanceTimersByTimeAsync(1_100);
+    expect(n).toBe(4);
+    queue.stop();
+  });
+
   it('a fetchImpl that resolves to a non-Response never rejects flush() (R6-1)', async () => {
     start();
     const queue = q((async () => undefined) as unknown as typeof fetch);
@@ -325,6 +362,43 @@ describe('EventQueue non-2xx answers (camada-all-a4m9)', () => {
     expect(queue.size).toBe(0);
     await vi.advanceTimersByTimeAsync(60_000);   // no hold timer survives stop()
     expect(queue.dropped).toBe(3);
+  });
+
+  it('stop() while a drain is in flight that then gets a 429: no hold outlives stop(); the forced retry sends the rows (RF-1)', async () => {
+    start();
+    let n = 0; let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const queue = q(async () => {
+      n++;
+      if (n === 1) { await gate; return new Response(null, { status: 429, headers: { 'retry-after': '5' } }); }
+      return new Response(null, { status: 202 });
+    });
+    queue.push({});
+    const flushing = queue.flush();
+    const stopping = queue.stop();
+    release();
+    await flushing; await stopping;
+    expect(n).toBe(2);            // rule: the in-flight 429 re-queues without a timer, stop()'s forced drain retries once
+    expect(queue.size).toBe(0);
+    expect(queue.dropped).toBe(0);
+    await vi.advanceTimersByTimeAsync(65_000);
+    expect(n).toBe(2);
+  });
+
+  it('stop() while a drain is in flight that then gets a 429: a failing forced retry counts the rows as dropped, nothing retries after (RF-1)', async () => {
+    start();
+    let n = 0; let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const queue = q(async () => { n++; if (n === 1) await gate; return new Response(null, { status: 429, headers: { 'retry-after': '5' } }); });
+    queue.push({});
+    const flushing = queue.flush();
+    const stopping = queue.stop();
+    release();
+    await flushing; await stopping;
+    await vi.advanceTimersByTimeAsync(65_000);
+    expect(n).toBe(2);
+    expect(queue.size).toBe(0);
+    expect(queue.dropped).toBe(1);
   });
 
   it('a throwing waitUntil never makes flush() throw, and the row still ships (R7-4)', async () => {
