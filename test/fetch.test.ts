@@ -889,3 +889,51 @@ describe('timer mode', () => {
     } finally { vi.useRealTimers(); }
   });
 });
+
+describe('one POST per flush interval, not per request (camada-all-7u3r)', () => {
+  const posts = (): { urls: string[]; fetchImpl: typeof fetch } => {
+    const urls: string[] = [];
+    return { urls, fetchImpl: ((u: string | URL | Request, init?: RequestInit) => { if (String(u).endsWith('/e')) urls.push(String(u)); return fetchImpl(u, init); }) as typeof fetch };
+  };
+  /** One request the way a long-lived host drives it: no waitUntil. */
+  const bare = async (a: App, path: string) => {
+    const res = await a.fetch(new Request(`http://app.test${path}`), ip('8.8.8.8'));
+    await res.arrayBuffer();
+  };
+
+  it('timer mode without a waitUntil batches: N spaced requests, zero POSTs until the interval, then one', async () => {
+    vi.useFakeTimers();
+    try {
+      const p = posts();
+      const a = app({ mode: 'timer', fetchImpl: p.fetchImpl });
+      await bare(a, '/');
+      await vi.advanceTimersByTimeAsync(100);
+      for (let i = 0; i < 20; i++) { await bare(a, '/cart'); await vi.advanceTimersByTimeAsync(100); }
+      expect(p.urls).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(p.urls).toHaveLength(1);
+      expect(events.length).toBeGreaterThanOrEqual(21);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('timer mode WITH a real waitUntil still flushes per row (Workers-class hosts)', async () => {
+    vi.useFakeTimers();
+    try {
+      const p = posts();
+      const a = app({ mode: 'timer', fetchImpl: p.fetchImpl });
+      await call(a, '/');
+      await call(a, '/cart');
+      await call(a, '/cart');
+      expect(p.urls.length).toBeGreaterThanOrEqual(3);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('lazy mode flushes per row even without a waitUntil (no timer exists to do it)', async () => {
+    const p = posts();
+    const a = app({ mode: 'lazy', fetchImpl: p.fetchImpl });
+    await bare(a, '/');
+    await bare(a, '/cart');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(p.urls.length).toBeGreaterThanOrEqual(2);
+  });
+});
