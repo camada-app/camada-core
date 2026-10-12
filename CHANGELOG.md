@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `EventQueue.flush()` called while a drain is finishing (its last send answered, the in-flight
+  promise not yet cleared) no longer hands back the finishing promise and leaves the new row in the
+  queue until the next 15 s tick, or for good in a serverless isolate that freezes after the
+  response. It now drains again once the running drain settles, and a `waitUntil` holds the whole
+  chain. (camada-all-a4m9, camada-all-7u3r)
 - `resolveClientIp` in `cidrs` mode (also the dashboard's Cloudflare option) no longer believes
   `X-Forwarded-For` from a socket peer that is not a trusted proxy: such a peer is the client.
   Before this, anyone reaching the origin directly could pick their own client IP, slip past an

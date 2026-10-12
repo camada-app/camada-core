@@ -66,7 +66,14 @@ export class EventQueue {
   /** force = the process is exiting: ignore a 429 hold (nobody will be here when it ends) and, if the
    *  send still fails, count the rows as dropped instead of re-holding them. */
   private drain(force: boolean, waitUntil?: (p: Promise<unknown>) => void): Promise<void> {
-    if (this.inflight) { waitUntil?.(this.inflight); return this.inflight; }   // edge runtimes must still hold the isolate open
+    if (this.inflight) {
+      // The running drain may already be past its last q.length check (its tail clears `inflight` a few
+      // microtasks later): a row pushed now would sit until the next timer tick, or forever in a frozen
+      // isolate. Drain again once it settles; edge runtimes hold the isolate open for the whole chain.
+      const next = this.inflight.then(() => this.drain(force));
+      waitUntil?.(next);
+      return next;
+    }
     const left = this.heldUntil - Date.now();
     if (this.q.length === 0 || (!force && left > 0 && left <= HOLD_MAX_MS)) return Promise.resolve();   // held after a 429: the hold timer retries; a hold longer than the clamp means the wall clock stepped back
     this.inflight = (async () => {
