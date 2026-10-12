@@ -6,7 +6,12 @@
 //
 // The page carries its own SHA-256 rather than calling crypto.subtle: subtle is undefined on
 // non-secure origins (plain http on a LAN host), and 65k awaited digests would be slow anyway.
-import { POW_BITS, escapeAttr, escapeScript } from './format.js';
+//
+// CSP (camada-all-mwpo): the inline script and style depend on `bits` alone (the solver reads the
+// nonce from the form), so their hashes are fixed per difficulty and `challengePageCsp(bits)`
+// can allow exactly them. Every adapter sends that policy with the page and drops any CSP the
+// app set earlier, so a strict app policy (helmet's default) cannot block the solver.
+import { POW_BITS, escapeAttr } from './format.js';
 
 export interface ChallengePageOptions {
   nonce: string;
@@ -57,12 +62,7 @@ function __camadaSha256Hex(msg){
   return s}
 `;
 
-export function challengePage(o: ChallengePageOptions): string {
-  const bits = Math.min(32, Math.max(1, o.bits ?? POW_BITS));   // shift 32-bits must stay in range
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Checking your browser</title>
-<style>
+const STYLE = `
 :root{color-scheme:light}
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fafafa;color:#1a1a1a;font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
 main{max-width:28rem;padding:2rem;text-align:center}
@@ -71,23 +71,15 @@ p{margin:.25rem 0;color:#555}
 .bar{margin:1.5rem auto 0;width:12rem;height:4px;border-radius:2px;background:#e5e5e5;overflow:hidden}
 .bar i{display:block;height:100%;width:30%;background:#1a1a1a;animation:camada-slide 1.1s ease-in-out infinite}
 @keyframes camada-slide{0%{transform:translateX(-120%)}100%{transform:translateX(400%)}}
-</style></head>
-<body>
-<main>
-<h1>Checking your browser</h1>
-<p id="camada-msg">This takes a moment. It runs entirely in your browser.</p>
-<noscript><p>JavaScript is required to continue.</p></noscript>
-<div class="bar"><i></i></div>
-</main>
-<form id="camada-f" method="POST" action="${escapeAttr(o.action)}">
-<input type="hidden" name="nonce" value="${escapeAttr(o.nonce)}">
-<input type="hidden" name="solution" id="camada-s">
-<input type="hidden" name="to" value="${escapeAttr(o.to)}">
-</form>
-<script>${SOLVER}
+`;
+
+const clampBits = (bits: number | undefined) => Math.min(32, Math.max(1, bits ?? POW_BITS));   // shift 32-bits must stay in range
+
+/** The page's one inline script. Depends on `bits` only: the nonce comes from the form. */
+const solverScript = (bits: number) => `${SOLVER}
 (function(){
   if(typeof window==='undefined'||window.__camadaAutostart===false)return;
-  var nonce=${escapeScript(o.nonce)},shift=${32 - bits};
+  var nonce=document.getElementById('camada-n').value,shift=${32 - bits};
   function go(){
     for(var n=0;n<5000000;n++){
       if((__camadaSha256Words(nonce+'.'+n)[0]>>>shift)===0){
@@ -97,6 +89,78 @@ p{margin:.25rem 0;color:#555}
     document.getElementById('camada-msg').textContent='Could not complete the check. Please reload.'}
   setTimeout(go,30);
 })();
-</script>
+`;
+
+export function challengePage(o: ChallengePageOptions): string {
+  const bits = clampBits(o.bits);
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Checking your browser</title>
+<style>${STYLE}</style></head>
+<body>
+<main>
+<h1>Checking your browser</h1>
+<p id="camada-msg">This takes a moment. It runs entirely in your browser.</p>
+<noscript><p>JavaScript is required to continue.</p></noscript>
+<div class="bar"><i></i></div>
+</main>
+<form id="camada-f" method="POST" action="${escapeAttr(o.action)}">
+<input type="hidden" name="nonce" value="${escapeAttr(o.nonce)}" id="camada-n">
+<input type="hidden" name="solution" id="camada-s">
+<input type="hidden" name="to" value="${escapeAttr(o.to)}">
+</form>
+<script>${solverScript(bits)}</script>
 </body></html>`;
+}
+
+// ---- CSP. A synchronous SHA-256 (core runs where node:crypto does not, and an adapter must be
+// able to set the header without awaiting); computed once per bits value.
+
+function sha256Base64(text: string): string {
+  const msg = new TextEncoder().encode(text);
+  const l = msg.length, wl = (((l + 9 + 63) >> 6) << 4);
+  const M = new Uint32Array(wl);
+  for (let i = 0; i < l; i++) M[i >> 2] |= msg[i] << (24 - (i % 4) * 8);
+  M[l >> 2] |= 0x80 << (24 - (l % 4) * 8);
+  M[wl - 1] = l * 8;   // the page is a few KB: the high length word stays 0
+  const rr = (x: number, n: number) => (x >>> n) | (x << (32 - n));
+  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  const W = new Uint32Array(64);
+  for (let bi = 0; bi < wl; bi += 16) {
+    for (let t = 0; t < 16; t++) W[t] = M[bi + t];
+    for (let t = 16; t < 64; t++) {
+      const x = W[t - 15], y = W[t - 2];
+      W[t] = (W[t - 16] + (rr(x, 7) ^ rr(x, 18) ^ (x >>> 3)) + W[t - 7] + (rr(y, 17) ^ rr(y, 19) ^ (y >>> 10))) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let t = 0; t < 64; t++) {
+      const t1 = (h + (rr(e, 6) ^ rr(e, 11) ^ rr(e, 25)) + ((e & f) ^ (~e & g)) + K[t] + W[t]) >>> 0;
+      const t2 = ((rr(a, 2) ^ rr(a, 13) ^ rr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+  }
+  let bin = '';
+  for (const w of H) bin += String.fromCharCode(w >>> 24, (w >>> 16) & 255, (w >>> 8) & 255, w & 255);
+  return btoa(bin);
+}
+
+const cspCache = new Map<number, string>();
+
+/**
+ * The `Content-Security-Policy` value to send with `challengePage({ bits })`: it allows only the
+ * page's own inline script and style (by `'sha256-…'` hash), a form post to the same origin, and
+ * nothing else. Send it as the response's only CSP, removing any `Content-Security-Policy` or
+ * `Content-Security-Policy-Report-Only` the app set before the challenge was served.
+ */
+export function challengePageCsp(bits?: number): string {
+  const b = clampBits(bits);
+  let csp = cspCache.get(b);
+  if (!csp) {
+    csp = `default-src 'none'; script-src 'sha256-${sha256Base64(solverScript(b))}'; style-src 'sha256-${sha256Base64(STYLE)}'; ` +
+      "form-action 'self'; base-uri 'none'; frame-ancestors 'self'";
+    cspCache.set(b, csp);
+  }
+  return csp;
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createHash, createHmac } from 'node:crypto';
 import {
-  createChallenge, createChallengeAsync, challengePage, challengeCookie, safeReturnTo,
+  createChallenge, createChallengeAsync, challengePage, challengePageCsp, challengeCookie, safeReturnTo,
   wantsHtml, parseFormBody, CHALLENGE_COOKIE, CHALLENGE_TTL_MS, POW_BITS,
 } from '../src/index.js';
 
@@ -189,5 +189,33 @@ describe('hardening', () => {
     const parsed = parseFormBody('__proto__=x&a=1');
     expect(Object.getPrototypeOf(parsed)).toBeNull();
     expect(parsed.a).toBe('1');
+  });
+});
+
+describe('page CSP (camada-all-mwpo)', () => {
+  const sha = (s: string) => `'sha256-${createHash('sha256').update(s, 'utf8').digest('base64')}'`;
+  const inline = (page: string, tag: string) => [...page.matchAll(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'g'))].map((m) => m[1]);
+
+  it('allows exactly the served inline solver and style, by hash, and nothing else', () => {
+    for (const bits of [undefined, 1, 12, 16, 20, 32]) {
+      const page = challengePage({ nonce: 'abc123', action: '/__camada/challenge', to: '/x', bits });
+      const csp = challengePageCsp(bits);
+      const [script] = inline(page, 'script');
+      const [style] = inline(page, 'style');
+      expect(csp).toContain(`script-src ${sha(script)};`);
+      expect(csp).toContain(`style-src ${sha(style)};`);
+      expect(csp).toContain("default-src 'none'");
+      expect(csp).toContain("form-action 'self'");
+      expect(csp).not.toContain('unsafe');
+    }
+  });
+
+  it('is fixed per bits value: the nonce, action and return target never reach the script', () => {
+    const a = challengePage({ nonce: 'aaaa', action: '/a', to: '/one' });
+    const b = challengePage({ nonce: 'bbbb', action: '/b', to: '/two?x="y' });
+    expect(inline(a, 'script')).toEqual(inline(b, 'script'));
+    expect(challengePageCsp()).toBe(challengePageCsp(16));
+    expect(challengePageCsp(12)).not.toBe(challengePageCsp(16));
+    expect(challengePageCsp(99)).toBe(challengePageCsp(32));   // clamped like the page
   });
 });
