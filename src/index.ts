@@ -19,4 +19,4 @@ export {
 } from './challenge/format.js';
 export { createChallenge, type ChallengeKit, type ChallengeCryptoSync } from './challenge/verify.js';
 export { createChallengeAsync, hmacHex, sha256Hex, type AsyncChallengeKit } from './challenge/verify-async.js';
-export { challengePage, type ChallengePageOptions } from './challenge/page.js';
+export { challengePage, challengePageCsp, type ChallengePageOptions } from './challenge/page.js';
