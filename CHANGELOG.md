@@ -53,6 +53,9 @@
 
 ### Added
 
+- `FetchCamada.active(ctx?)`: whether `before()` would act on a request with this context (a key or
+  the token pair, no `CAMADA_DISABLED=1`), for an adapter path that is camada's only while it is
+  active. (camada-all-wjln)
 - `challengePageCsp(bits?)`: the `Content-Security-Policy` to send with `challengePage({ bits })`.
   It allows only the page's inline solver and style, by `'sha256-…'` hash (computed
   synchronously, cached per `bits`), plus `default-src 'none'; base-uri 'none';

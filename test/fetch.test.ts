@@ -466,6 +466,21 @@ describe('ordered custom rules (v5)', () => {
   });
 });
 
+describe('active() (R4b-4)', () => {
+  it('is the same inert test before() makes: a key (or the token pair) and no CAMADA_DISABLED=1, merged ctx.env then opts.env', () => {
+    const mk = (opts: FetchCamadaOptions = {}) => { const c = createFetchCamada({ tap: TAP_BUN, sdk: SDK, iife: IIFE }, { fetchImpl, ...opts }); created.push(c); return c; };
+    expect(mk().active({ env: ENV })).toBe(true);
+    expect(mk({ env: ENV }).active()).toBe(true);
+    expect(mk().active({ env: {} })).toBe(false);
+    expect(mk().active()).toBe(false);
+    expect(mk().active({ env: { ...ENV, CAMADA_DISABLED: '1' } })).toBe(false);
+    expect(mk({ env: { CAMADA_DISABLED: '1' } }).active({ env: ENV })).toBe(false);
+    expect(mk({ key: 'tok-x.snap-x' }).active({ env: {} })).toBe(true);
+    expect(mk().active({ env: { CAMADA_TOKEN: 't', CAMADA_SNAPSHOT_TOKEN: 's' } })).toBe(true);
+    expect(mk().active({ env: { CAMADA_TOKEN: 't' } })).toBe(false);
+  });
+});
+
 describe('challenge', () => {
   it('serves the page, verifies the solution, and lets the cookie holder through', async () => {
     const a = await primed();
