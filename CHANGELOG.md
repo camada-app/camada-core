@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- The fetch adapters' challenge page (`@camada/core/fetch`: served, and re-issued after a wrong
+  answer) sends `Content-Security-Policy: challengePageCsp()`, the page's own policy allowing only
+  its inline solver and style by hash. bun, deno, nuxt, remix and sveltekit get it from here.
+  (camada-all-mwpo)
 - `EventQueue.flush()` called while a drain is finishing (its last send answered, the in-flight
   promise not yet cleared) no longer hands back the finishing promise and leaves the new row in the
   queue until the next 15 s tick, or for good in a serverless isolate that freezes after the

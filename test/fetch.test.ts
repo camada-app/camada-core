@@ -486,6 +486,25 @@ describe('challenge', () => {
     expect(after.status).toBe(200);
   });
 
+  it('sends the page with its own CSP, whose hashes match the served inline script and style (camada-all-mwpo)', async () => {
+    const a = await primed();
+    const sha = (t: string) => `'sha256-${createHash('sha256').update(t, 'utf8').digest('base64')}'`;
+    const check = (res: Response, html: string) => {
+      const csp = res.headers.get('content-security-policy')!;
+      expect(csp).toContain("default-src 'none'");
+      expect(csp).toContain(`script-src ${sha(/<script>([\s\S]*?)<\/script>/.exec(html)![1])}`);
+      expect(csp).toContain(`style-src ${sha(/<style>([\s\S]*?)<\/style>/.exec(html)![1])}`);
+      expect(res.headers.get('content-security-policy-report-only')).toBeNull();
+    };
+    const page = await call(a, '/cart', { headers: HTML }, ip(CHALLENGED_IP));
+    check(page, await page.text());
+    const again = await postSolution(a, CHALLENGED_IP, 'nonce=x&solution=1&to=%2Fcart');   // a wrong answer re-issues the page
+    expect(again.status).toBe(403);
+    check(again, await again.text());
+    const json = await call(a, '/checkout', { headers: { accept: 'application/json' } });
+    expect(json.headers.get('content-security-policy')).toBeNull();   // no page, no page policy
+  });
+
   it('challenges on a path rule, not just an ip', async () => {
     const a = await primed();
     const res = await call(a, '/admin/users', { headers: HTML });
