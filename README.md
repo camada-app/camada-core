@@ -56,13 +56,27 @@ Those depend on it, so `npm install` of any of them brings it along.
   header-bitmask order and the wire header order (`hord`) only an in-app SDK can see.
 - **Redaction (non-configurable-off)** — `Authorization`/`Cookie` values never leave (scheme
   and count only; a schemeless `Authorization` value ships nothing at all), credential-looking
-  query values become `~r`, and user identifiers are HMAC-hashed in-process (`hashUserId`).
+  query parts become `~r` (in the request's own query and in the `Referer`'s query and
+  fragment, `scrubUrl`; paths are not rewritten, in either). Names and values are
+  percent-decoded before the test, and a value that decodes to a nested query (`?`, `&` or `=`)
+  is dropped whole when any of its segments is a credential (`next=/reset?token=…`, an encoded
+  `redirect_uri` carrying a `code`); other values, attack payloads included, stay readable for the
+  analysis. User identifiers are
+  HMAC-hashed in-process (`hashUserId`).
   `bodyShape` and `REDACT_ALLOWLIST` are staging for app-context body capture (a later phase);
   no SDK captures request bodies today. This package is open source so these claims are
   auditable.
 - **`resolveClientIp`** — socket peer by default; `X-Forwarded-For` is only consulted under an
   explicit trusted-proxy config (`hops` / `cidrs` / `vercel`), so a spoofed XFF can't reach the
-  analysis or the blocklist.
+  analysis or the blocklist. XFF entries may carry a port (`ip:port`, `[v6]:port`) and may be
+  IPv4-mapped (`::ffff:a.b.c.d`, read as `a.b.c.d`). In `cidrs`
+  mode (and the dashboard's Cloudflare option, which is stored as `cidrs`) the socket peer must
+  itself be a trusted proxy or a loopback address (a local front end such as App Engine's);
+  otherwise the peer is the client and XFF is ignored. Adapters that have no socket peer
+  (`resolveClientIp(null, …)`, e.g. `@camada/next`) still walk XFF: they trust the host's network
+  edge, so the app must not be reachable around it. An adapter that has a socket must never pass
+  null for one request whose peer it cannot read. The result is always a valid IP or null: a
+  non-IP peer (a unix socket path, `ip:port`, a zone id) resolves to null and never walks XFF.
 
 ## `@camada/core/fetch` — the shared Web-fetch pipeline
 

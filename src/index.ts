@@ -7,7 +7,7 @@ export { SnapshotClient, type SnapshotClientOptions, type Verdict } from './snap
 export { parseIp4, parseIp6Into } from './snapshot/ipparse.js';
 export { HDRS, buildWireEvent, authScheme, type RequestInfo, type BuildOptions, type WireEvent } from './events/build.js';
 export { EventQueue, type EventQueueOptions } from './events/queue.js';
-export { scrubQuery, bodyShape, hashUserId, REDACT_ALLOWLIST } from './redact.js';
+export { scrubQuery, scrubUrl, bodyShape, hashUserId, REDACT_ALLOWLIST } from './redact.js';
 export { resolveClientIp, parseTrustedProxyEnv, type TrustedProxyConfig } from './ip.js';
 export { parseKey, type CamadaKey, type CamadaRemoteConfig } from './config.js';
 export { guarded, guardedAsync, logRateLimited } from './guarded.js';

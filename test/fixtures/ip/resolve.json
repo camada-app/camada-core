@@ -1,0 +1,985 @@
+{
+  "version": 3,
+  "doc": "resolveClientIp(peer, xff, configs[config]) must equal expect. The result is always a valid IP or null. Contract: .agent-team/runs/2026-10-12-bugfix/contracts/sdk-conformance.md (C6). configs.unset is \"no config at all\".",
+  "configs": {
+    "unset": null,
+    "none": {
+      "mode": "none"
+    },
+    "hops1": {
+      "mode": "hops",
+      "hops": 1
+    },
+    "hops2": {
+      "mode": "hops",
+      "hops": 2
+    },
+    "vercel": {
+      "mode": "vercel"
+    },
+    "azure": {
+      "mode": "cidrs",
+      "cidrs": [
+        "169.254.0.0/16"
+      ]
+    },
+    "cloudflare": {
+      "mode": "cidrs",
+      "cidrs": [
+        "173.245.48.0/20",
+        "103.21.244.0/22",
+        "103.22.200.0/22",
+        "103.31.4.0/22",
+        "141.101.64.0/18",
+        "108.162.192.0/18",
+        "190.93.240.0/20",
+        "188.114.96.0/20",
+        "197.234.240.0/22",
+        "198.41.128.0/17",
+        "162.158.0.0/15",
+        "104.16.0.0/13",
+        "104.24.0.0/14",
+        "172.64.0.0/13",
+        "131.0.72.0/22",
+        "2400:cb00::/32",
+        "2606:4700::/32",
+        "2803:f800::/32",
+        "2405:b500::/32",
+        "2405:8100::/32",
+        "2a06:98c0::/29",
+        "2c0f:f248::/32"
+      ],
+      "cloudflare": [
+        "173.245.48.0/20",
+        "103.21.244.0/22",
+        "103.22.200.0/22",
+        "103.31.4.0/22",
+        "141.101.64.0/18",
+        "108.162.192.0/18",
+        "190.93.240.0/20",
+        "188.114.96.0/20",
+        "197.234.240.0/22",
+        "198.41.128.0/17",
+        "162.158.0.0/15",
+        "104.16.0.0/13",
+        "104.24.0.0/14",
+        "172.64.0.0/13",
+        "131.0.72.0/22",
+        "2400:cb00::/32",
+        "2606:4700::/32",
+        "2803:f800::/32",
+        "2405:b500::/32",
+        "2405:8100::/32",
+        "2a06:98c0::/29",
+        "2c0f:f248::/32"
+      ]
+    },
+    "trialsights": {
+      "mode": "cidrs",
+      "cidrs": [
+        "173.245.48.0/20",
+        "103.21.244.0/22",
+        "103.22.200.0/22",
+        "103.31.4.0/22",
+        "141.101.64.0/18",
+        "108.162.192.0/18",
+        "190.93.240.0/20",
+        "188.114.96.0/20",
+        "197.234.240.0/22",
+        "198.41.128.0/17",
+        "162.158.0.0/15",
+        "104.16.0.0/13",
+        "104.24.0.0/14",
+        "172.64.0.0/13",
+        "131.0.72.0/22",
+        "2400:cb00::/32",
+        "2606:4700::/32",
+        "2803:f800::/32",
+        "2405:b500::/32",
+        "2405:8100::/32",
+        "2a06:98c0::/29",
+        "2c0f:f248::/32",
+        "169.254.0.0/16"
+      ],
+      "cloudflare": [
+        "173.245.48.0/20",
+        "103.21.244.0/22",
+        "103.22.200.0/22",
+        "103.31.4.0/22",
+        "141.101.64.0/18",
+        "108.162.192.0/18",
+        "190.93.240.0/20",
+        "188.114.96.0/20",
+        "197.234.240.0/22",
+        "198.41.128.0/17",
+        "162.158.0.0/15",
+        "104.16.0.0/13",
+        "104.24.0.0/14",
+        "172.64.0.0/13",
+        "131.0.72.0/22",
+        "2400:cb00::/32",
+        "2606:4700::/32",
+        "2803:f800::/32",
+        "2405:b500::/32",
+        "2405:8100::/32",
+        "2a06:98c0::/29",
+        "2c0f:f248::/32"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "hops-bare-v4",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66",
+      "expect": "203.0.113.66"
+    },
+    {
+      "id": "hops-v4-port",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66:51234",
+      "expect": "203.0.113.66",
+      "note": "Azure Application Gateway writes \"ip:port\""
+    },
+    {
+      "id": "hops-v6-bracket-port",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "[2001:db8::66]:51234",
+      "expect": "2001:db8::66"
+    },
+    {
+      "id": "hops-v6-bracket-noport",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "[2001:db8::66]",
+      "expect": "2001:db8::66"
+    },
+    {
+      "id": "hops-bare-v6",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "2001:db8::66",
+      "expect": "2001:db8::66",
+      "note": "bare IPv6 is never split on its last colon"
+    },
+    {
+      "id": "hops-bare-v6-port-lookalike",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "2001:db8::66:8080",
+      "expect": "2001:db8::66:8080",
+      "note": "a bare IPv6 whose last group looks like a port stays a whole address"
+    },
+    {
+      "id": "hops2-port-entries",
+      "ticket": "0vho",
+      "config": "hops2",
+      "peer": "169.254.130.1",
+      "xff": "198.51.100.9:443, 203.0.113.66:51234, 10.0.0.1:80",
+      "expect": "203.0.113.66"
+    },
+    {
+      "id": "hops-v4-port-whitespace",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "  203.0.113.66:51234  ",
+      "expect": "203.0.113.66"
+    },
+    {
+      "id": "vercel-v4-port",
+      "ticket": "0vho",
+      "config": "vercel",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66:51234",
+      "expect": "203.0.113.66"
+    },
+    {
+      "id": "cidrs-v4-port",
+      "ticket": "0vho",
+      "config": "azure",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66:51234",
+      "expect": "203.0.113.66"
+    },
+    {
+      "id": "cidrs-v6-bracket-port",
+      "ticket": "0vho",
+      "config": "azure",
+      "peer": "169.254.130.1",
+      "xff": "[2001:db8::66]:51234",
+      "expect": "2001:db8::66"
+    },
+    {
+      "id": "cidrs-trusted-hop-with-port",
+      "ticket": "0vho",
+      "config": "azure",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66, 169.254.1.1:5000",
+      "expect": "203.0.113.66",
+      "note": "the trusted-range test also sees the normalised address"
+    },
+    {
+      "id": "cidrs-trusted-v6-hop-with-port",
+      "ticket": "0vho",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "198.51.100.9, [2400:cb00::1]:443",
+      "expect": "198.51.100.9"
+    },
+    {
+      "id": "malformed-empty-port",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66:",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "malformed-alpha-port",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66:abc",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "malformed-port-too-long",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66:123456",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "malformed-two-ports",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66:80:90",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "malformed-unclosed-bracket",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "[2001:db8::66:51234",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "malformed-bracket-empty-port",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "[2001:db8::66]:",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "malformed-bracket-trailing",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "[2001:db8::66]x",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "malformed-bracketed-v4",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "[203.0.113.66]:80",
+      "expect": "169.254.130.1",
+      "note": "brackets are for IPv6 only"
+    },
+    {
+      "id": "malformed-empty-brackets",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "[]:80",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "malformed-hostname-port",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "not-an-ip:80",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "malformed-bad-octet-port",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.256:80",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "cf-trusted-peer",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "198.51.100.9",
+      "expect": "198.51.100.9"
+    },
+    {
+      "id": "cf-trusted-peer-spoofed-left",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "1.2.3.4, 198.51.100.9",
+      "expect": "198.51.100.9",
+      "note": "the rightmost untrusted entry wins, never a forged left entry"
+    },
+    {
+      "id": "cf-trusted-peer-two-edges",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "198.51.100.9, 104.16.0.5",
+      "expect": "198.51.100.9"
+    },
+    {
+      "id": "cf-trusted-v6-peer",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "2400:cb00::1",
+      "xff": "198.51.100.9",
+      "expect": "198.51.100.9"
+    },
+    {
+      "id": "cf-trusted-peer-all-trusted",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "104.16.0.5, 172.64.2.2",
+      "expect": "172.64.1.1",
+      "note": "nothing untrusted in the chain: fail safe to the peer"
+    },
+    {
+      "id": "cf-direct-hit-blocked-ip",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "203.0.113.200",
+      "xff": "203.0.113.66",
+      "expect": "203.0.113.200",
+      "note": "untrusted peer is the client; XFF ignored (victim framing)"
+    },
+    {
+      "id": "cf-direct-hit-evasion",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "203.0.113.200",
+      "xff": "8.8.8.8",
+      "expect": "203.0.113.200",
+      "note": "untrusted peer is the client; XFF ignored (blocklist evasion)"
+    },
+    {
+      "id": "cf-direct-hit-forged-cf-chain",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "203.0.113.200",
+      "xff": "8.8.8.8, 172.64.1.1",
+      "expect": "203.0.113.200",
+      "note": "a forged Cloudflare hop in XFF does not make the peer trusted"
+    },
+    {
+      "id": "cf-direct-hit-v6",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "2001:db8::99",
+      "xff": "198.51.100.9",
+      "expect": "2001:db8::99"
+    },
+    {
+      "id": "cf-direct-hit-v4-mapped-peer",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "::ffff:203.0.113.200",
+      "xff": "8.8.8.8",
+      "expect": "203.0.113.200",
+      "note": "Node reports a dual-stack v4 peer as ::ffff:a.b.c.d"
+    },
+    {
+      "id": "cidrs-direct-hit-azure",
+      "ticket": "yfc6",
+      "config": "azure",
+      "peer": "198.51.100.7",
+      "xff": "203.0.113.66:51234",
+      "expect": "198.51.100.7"
+    },
+    {
+      "id": "loopback-peer-v4-walks",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "127.0.0.1",
+      "xff": "198.51.100.9, 172.64.1.1",
+      "expect": "198.51.100.9",
+      "note": "a loopback peer is a trusted hop (local front end / sidecar)"
+    },
+    {
+      "id": "loopback-peer-v4-other",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "127.5.6.7",
+      "xff": "198.51.100.9, 172.64.1.1",
+      "expect": "198.51.100.9",
+      "note": "all of 127.0.0.0/8"
+    },
+    {
+      "id": "loopback-peer-v6",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "::1",
+      "xff": "198.51.100.9, 172.64.1.1",
+      "expect": "198.51.100.9"
+    },
+    {
+      "id": "loopback-peer-v4-mapped",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "::ffff:127.0.0.1",
+      "xff": "198.51.100.9, 172.64.1.1",
+      "expect": "198.51.100.9",
+      "note": "as Node reports loopback on a dual-stack socket"
+    },
+    {
+      "id": "loopback-peer-trusts-front-end",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "127.0.0.1",
+      "xff": "8.8.8.8",
+      "expect": "8.8.8.8",
+      "note": "D1 trade-off: a loopback peer is believed to be a front end that appended XFF"
+    },
+    {
+      "id": "loopback-peer-no-xff",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "127.0.0.1",
+      "xff": null,
+      "expect": "127.0.0.1"
+    },
+    {
+      "id": "loopback-xff-entry-not-trusted",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "127.0.0.1",
+      "expect": "127.0.0.1",
+      "note": "loopback is trusted only as the socket peer, never as an XFF entry"
+    },
+    {
+      "id": "trialsights-via-cloudflare",
+      "ticket": "yfc6",
+      "config": "trialsights",
+      "peer": "127.0.0.1",
+      "xff": "6.6.6.6, 198.51.100.9, 172.64.1.1, 169.254.1.1",
+      "expect": "198.51.100.9",
+      "note": "App Engine: peer always 127.0.0.1, Google front end appends 169.254.1.1"
+    },
+    {
+      "id": "trialsights-direct-appspot",
+      "ticket": "yfc6",
+      "config": "trialsights",
+      "peer": "127.0.0.1",
+      "xff": "6.6.6.6, 198.51.100.9, 169.254.1.1",
+      "expect": "198.51.100.9"
+    },
+    {
+      "id": "trialsights-ports",
+      "ticket": "yfc6",
+      "config": "trialsights",
+      "peer": "127.0.0.1",
+      "xff": "6.6.6.6, 198.51.100.9:51234, [2400:cb00::1]:443, 169.254.1.1",
+      "expect": "198.51.100.9"
+    },
+    {
+      "id": "no-peer-walks",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": null,
+      "xff": "1.2.3.4, 198.51.100.9, 172.64.1.1",
+      "expect": "198.51.100.9",
+      "note": "adapters without a socket peer keep the walk: they trust the host network edge"
+    },
+    {
+      "id": "no-peer-all-trusted",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": null,
+      "xff": "172.64.1.1",
+      "expect": null
+    },
+    {
+      "id": "no-peer-no-xff",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": null,
+      "xff": null,
+      "expect": null
+    },
+    {
+      "id": "hops-untrusted-peer-unchanged",
+      "ticket": "yfc6",
+      "config": "hops1",
+      "peer": "198.51.100.7",
+      "xff": "203.0.113.66",
+      "expect": "203.0.113.66",
+      "note": "hops trusts XFF by definition; out of yfc6 scope"
+    },
+    {
+      "id": "vercel-untrusted-peer-unchanged",
+      "ticket": "yfc6",
+      "config": "vercel",
+      "peer": "198.51.100.7",
+      "xff": "spoof, 203.0.113.66",
+      "expect": "203.0.113.66"
+    },
+    {
+      "id": "none-ignores-xff",
+      "ticket": "yfc6",
+      "config": "none",
+      "peer": "203.0.113.200",
+      "xff": "203.0.113.66",
+      "expect": "203.0.113.200"
+    },
+    {
+      "id": "unset-ignores-xff",
+      "ticket": "yfc6",
+      "config": "unset",
+      "peer": "203.0.113.200",
+      "xff": "203.0.113.66",
+      "expect": "203.0.113.200"
+    },
+    {
+      "id": "unset-v4-mapped-peer",
+      "ticket": "yfc6",
+      "config": "unset",
+      "peer": "::ffff:203.0.113.9",
+      "xff": null,
+      "expect": "203.0.113.9"
+    },
+    {
+      "id": "xff-v4-mapped",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "::ffff:203.0.113.66",
+      "expect": "203.0.113.66",
+      "note": "dual-stack proxies write a v4 client as ::ffff:a.b.c.d; reduced to the dotted quad like the peer"
+    },
+    {
+      "id": "xff-v4-mapped-upper",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "::FFFF:203.0.113.66",
+      "expect": "203.0.113.66",
+      "note": "the ::ffff: prefix is case-insensitive"
+    },
+    {
+      "id": "xff-v4-mapped-bracket-port",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "[::ffff:203.0.113.66]:443",
+      "expect": "203.0.113.66",
+      "note": "port strip first, then the mapped reduction"
+    },
+    {
+      "id": "cf-xff-v4-mapped-client",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "::ffff:198.51.100.9",
+      "expect": "198.51.100.9"
+    },
+    {
+      "id": "cf-xff-v4-mapped-cf-hop",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "198.51.100.9, ::ffff:172.64.1.2",
+      "expect": "198.51.100.9",
+      "note": "a mapped Cloudflare hop is tested against the v4 ranges after reduction"
+    },
+    {
+      "id": "cf-xff-v4-mapped-hex-not-reduced",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "198.51.100.9, ::ffff:ac40:102",
+      "expect": "::ffff:ac40:102",
+      "note": "only the dotted form is reduced; the hex form is an ordinary IPv6 address outside the v4 ranges"
+    },
+    {
+      "id": "xff-v4-mapped-bad-quad",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "::ffff:203.0.113.256",
+      "expect": "169.254.130.1",
+      "note": "not a valid dotted quad: not reduced, fails validation, peer wins"
+    },
+    {
+      "id": "unset-peer-v4-mapped-hex",
+      "ticket": "yfc6",
+      "config": "unset",
+      "peer": "::ffff:7f00:1",
+      "xff": null,
+      "expect": "::ffff:7f00:1",
+      "note": "the peer's ::ffff: prefix is removed only when a valid dotted quad follows"
+    },
+    {
+      "id": "cf-peer-v4-mapped-hex-not-loopback",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "::ffff:7f00:1",
+      "xff": "8.8.8.8",
+      "expect": "::ffff:7f00:1",
+      "note": "hex-form mapped loopback is not loopback: untrusted peer, XFF ignored"
+    },
+    {
+      "id": "unset-peer-v4-mapped-garbage",
+      "ticket": "yfc6",
+      "config": "unset",
+      "peer": "::ffff:zz",
+      "xff": null,
+      "expect": null,
+      "note": "not reduced (no dotted quad), not a valid IP: null (v3)"
+    },
+    {
+      "id": "loopback-peer-v4-mapped-upper",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "::FFFF:127.0.0.1",
+      "xff": "8.8.8.8",
+      "expect": "8.8.8.8"
+    },
+    {
+      "id": "unset-peer-v4-mapped-upper",
+      "ticket": "yfc6",
+      "config": "unset",
+      "peer": "::FFFF:203.0.113.9",
+      "xff": null,
+      "expect": "203.0.113.9"
+    },
+    {
+      "id": "loopback-peer-v6-long-form",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "0:0:0:0:0:0:0:1",
+      "xff": "8.8.8.8",
+      "expect": "8.8.8.8",
+      "note": "::1 in any spelling"
+    },
+    {
+      "id": "cf-trusted-v4-mapped-peer",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "::ffff:172.64.1.1",
+      "xff": "198.51.100.9",
+      "expect": "198.51.100.9",
+      "note": "a mapped trusted peer is trusted after reduction and walks"
+    },
+    {
+      "id": "hops2-empty-entries",
+      "ticket": "0vho",
+      "config": "hops2",
+      "peer": "169.254.130.1",
+      "xff": "198.51.100.9, , 203.0.113.66",
+      "expect": "198.51.100.9",
+      "note": "empty entries are dropped before counting hops"
+    },
+    {
+      "id": "xff-only-separators",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": " , ",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "loopback-peer-xff-only-separators",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "::1",
+      "xff": " , ,",
+      "expect": "::1"
+    },
+    {
+      "id": "xff-empty-string",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "xff-tab-ows",
+      "ticket": "0vho",
+      "config": "hops2",
+      "peer": "169.254.130.1",
+      "xff": "198.51.100.9\t,\t203.0.113.66",
+      "expect": "198.51.100.9",
+      "note": "space and tab around an entry are trimmed"
+    },
+    {
+      "id": "xff-tab-inside-entry",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "198.51.100.9\t203.0.113.66",
+      "expect": "169.254.130.1",
+      "note": "only a comma separates entries"
+    },
+    {
+      "id": "xff-zone-id",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "fe80::1%eth0",
+      "expect": "169.254.130.1",
+      "note": "zone ids are not valid IPs"
+    },
+    {
+      "id": "xff-zone-id-bracket-port",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "[fe80::1%25eth0]:80",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "cf-peer-zone-id",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "fe80::1%eth0",
+      "xff": "8.8.8.8",
+      "expect": null,
+      "note": "a zone-id peer is not a valid IP: null (v3)"
+    },
+    {
+      "id": "unset-peer-zone-id",
+      "ticket": "yfc6",
+      "config": "unset",
+      "peer": "fe80::1%eth0",
+      "xff": null,
+      "expect": null,
+      "note": "the result is a valid IP or null in every mode (v3)"
+    },
+    {
+      "id": "loopback-peer-xff-v6-loopback-bracket-port",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "127.0.0.1",
+      "xff": "[::1]:80",
+      "expect": "::1",
+      "note": "a loopback XFF entry is ordinary and untrusted, after port strip"
+    },
+    {
+      "id": "port-zero",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66:0",
+      "expect": "203.0.113.66"
+    },
+    {
+      "id": "port-max",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66:65535",
+      "expect": "203.0.113.66"
+    },
+    {
+      "id": "port-five-digits-out-of-range",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66:99999",
+      "expect": "203.0.113.66",
+      "note": "a port is 1-5 digits; no range check"
+    },
+    {
+      "id": "cf-peer-unix-socket",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "/run/app.sock",
+      "xff": "8.8.8.8",
+      "expect": null,
+      "note": "a non-null peer that is not a valid IP gives a null result (v3); it never selects the no-peer walk"
+    },
+    {
+      "id": "cf-peer-with-port",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1:443",
+      "xff": "8.8.8.8",
+      "expect": null,
+      "note": "the peer is never port-stripped; an ip:port peer is not a valid IP: null (v3)"
+    },
+    {
+      "id": "cf-peer-empty-string",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "",
+      "xff": "1.2.3.4, 198.51.100.9, 172.64.1.1",
+      "expect": "198.51.100.9",
+      "note": "an empty peer is the same as null (no-peer adapters only)"
+    },
+    {
+      "id": "cf-peer-at-sign",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "@",
+      "xff": "8.8.8.8",
+      "expect": null,
+      "note": "Go net.SplitHostPort-style junk: an invalid peer gives null, XFF is never walked"
+    },
+    {
+      "id": "cf-peer-v4-mapped-garbage",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "::ffff:zz",
+      "xff": "8.8.8.8",
+      "expect": null
+    },
+    {
+      "id": "cf-peer-trailing-space",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1 ",
+      "xff": "8.8.8.8",
+      "expect": null,
+      "note": "the peer is never trimmed"
+    },
+    {
+      "id": "unset-peer-unix-socket",
+      "ticket": "yfc6",
+      "config": "unset",
+      "peer": "/run/app.sock",
+      "xff": null,
+      "expect": null
+    },
+    {
+      "id": "hops-invalid-peer-valid-xff",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "/run/app.sock",
+      "xff": "203.0.113.66",
+      "expect": "203.0.113.66",
+      "note": "hops does not look at the peer"
+    },
+    {
+      "id": "hops-invalid-peer-invalid-xff",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "/run/app.sock",
+      "xff": "not-an-ip",
+      "expect": null,
+      "note": "fallback to an invalid peer is null"
+    },
+    {
+      "id": "unset-peer-v6-embedded-v4",
+      "ticket": "yfc6",
+      "config": "unset",
+      "peer": "64:ff9b::198.51.100.9",
+      "xff": null,
+      "expect": null,
+      "note": "embedded dotted quads are not valid IPv6 here (only ::ffff:a.b.c.d is reduced)"
+    },
+    {
+      "id": "xff-ipv6-leading-colon",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": ":8:8:8",
+      "expect": "169.254.130.1",
+      "note": "a single leading colon is not valid IPv6"
+    },
+    {
+      "id": "xff-ipv6-trailing-colon",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "2001:db8::1:",
+      "expect": "169.254.130.1",
+      "note": "a single trailing colon is not valid IPv6"
+    },
+    {
+      "id": "cf-xff-ipv6-trailing-colon-not-trusted",
+      "ticket": "yfc6",
+      "config": "cloudflare",
+      "peer": "172.64.1.1",
+      "xff": "198.51.100.9, 2606:4700::1:",
+      "expect": "172.64.1.1",
+      "note": "an invalid entry is never a trusted hop: it is the candidate, fails validation, peer wins"
+    },
+    {
+      "id": "xff-ipv6-embedded-v4",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "::1.2.3.4",
+      "expect": "169.254.130.1",
+      "note": "embedded dotted quad: invalid"
+    },
+    {
+      "id": "xff-ipv6-embedded-v4-nat64",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "64:ff9b::198.51.100.9",
+      "expect": "169.254.130.1"
+    },
+    {
+      "id": "xff-ipv6-embedded-v4-long-mapped",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "0:0:0:0:0:ffff:1.2.3.4",
+      "expect": "169.254.130.1",
+      "note": "only the literal ::ffff: prefix is reduced"
+    },
+    {
+      "id": "xff-nbsp-not-trimmed",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66 ",
+      "expect": "169.254.130.1",
+      "note": "only space and tab are trimmed"
+    },
+    {
+      "id": "xff-nbsp-only-entry-counts",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66, ",
+      "expect": "169.254.130.1",
+      "note": "an NBSP-only entry is not empty: it counts, fails validation, peer wins"
+    },
+    {
+      "id": "xff-cr-not-trimmed",
+      "ticket": "0vho",
+      "config": "hops1",
+      "peer": "169.254.130.1",
+      "xff": "203.0.113.66\r",
+      "expect": "169.254.130.1"
+    }
+  ]
+}
