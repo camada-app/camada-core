@@ -29,6 +29,15 @@ const W = new Uint32Array(4), G = new Uint16Array(8);
 const validIp = (s: string) => (s.indexOf(':') === -1 ? parseIp4(s) >= 0 : parseIp6Into(s, W, G));
 
 const PORT_RE = /^:\d{1,5}$/;
+/** `::ffff:a.b.c.d` (any case) → `a.b.c.d`, only when a valid dotted quad follows; anything else is
+ *  returned unchanged (`::ffff:7f00:1` stays an ordinary IPv6 address). Dual-stack sockets report v4
+ *  peers this way and dual-stack proxies write v4 clients into XFF this way (C6 v2). */
+function unmap(s: string): string {
+  if (s.length < 14 || s.slice(0, 7).toLowerCase() !== '::ffff:') return s;
+  const v4 = s.slice(7);
+  return parseIp4(v4) >= 0 ? v4 : s;
+}
+
 /** One X-Forwarded-For entry with any port removed (camada-all-0vho): `[v6]:port` and `[v6]` → `v6`,
  *  `a.b.c.d:port` → `a.b.c.d`. A bare IPv6 literal is returned whole (its last group is never a port).
  *  Anything else malformed comes back unchanged, so validation still rejects it and the peer wins. */
@@ -46,7 +55,7 @@ function stripPort(e: string): string {
 }
 
 /** 127.0.0.0/8 or ::1 (camada-all-yfc6, decision D1). The peer's `::ffff:127.x.x.x` form is already
- *  reduced to the dotted quad by resolveClientIp. */
+ *  reduced to the dotted quad by unmap. */
 function isLoopback(ip: string): boolean {
   if (ip.indexOf(':') === -1) { const n = parseIp4(ip); return n >= 0 && n >>> 24 === 127; }
   return parseIp6Into(ip, W, G) && W[0] === 0 && W[1] === 0 && W[2] === 0 && W[3] === 1;
@@ -89,7 +98,9 @@ function inCidr(ip: string, cidr: Cidr4 | Cidr6): boolean {
  * Resolves the client IP from the socket peer address and the X-Forwarded-For header per the
  * trusted-proxy config. Anything unresolvable falls back to the socket peer — fail safe.
  *
- * XFF entries are read without a port (`ip:port`, `[v6]:port`, as Azure writes them) in every mode.
+ * XFF entries are read without a port (`ip:port`, `[v6]:port`, as Azure writes them) and with a
+ * `::ffff:a.b.c.d` entry reduced to `a.b.c.d`, in every mode. Several XFF header lines are joined in
+ * arrival order with `, ` by the adapter before they get here.
  *
  * `cidrs` (also what the dashboard's Cloudflare option stores) walks the chain `[...xff, peer]` from
  * the right: if the socket peer is not a trusted proxy, the request did not come through one and the
@@ -100,12 +111,16 @@ function inCidr(ip: string, cidr: Cidr4 | Cidr6): boolean {
  * With no peer at all (`socketAddr` null: adapters whose host exposes no socket, e.g. @camada/next)
  * the walk runs over XFF alone, as before: such adapters trust the host's network edge to have
  * written XFF, and the deployment must not let clients reach the app around that edge.
+ * An empty peer is the same as null. That is for adapters with no socket concept only: an adapter
+ * that has a socket but cannot read its peer for one request must not pass null (see C6 v2).
+ * The peer is otherwise taken as given (only `::ffff:a.b.c.d` is reduced): a non-IP peer (a unix
+ * socket path, `ip:port`, a zone id) is never trusted, so in `cidrs` mode it is returned and XFF ignored.
  * `hops` and `vercel` trust XFF by definition and do not look at the peer.
  */
 export function resolveClientIp(socketAddr: string | null | undefined, xff: string | null | undefined, cfg?: TrustedProxyConfig | null): string | null {
-  const sock = socketAddr ? socketAddr.replace(/^::ffff:/i, '') : null;   // Node dual-stack v4-mapped form
+  const sock = socketAddr ? unmap(socketAddr) : null;   // Node dual-stack v4-mapped form
   if (!cfg || cfg.mode === 'none' || !xff) return sock;
-  const entries = xff.split(',').map((s) => stripPort(s.trim())).filter(Boolean);
+  const entries = xff.split(',').map((s) => unmap(stripPort(s.trim()))).filter(Boolean);
   if (!entries.length) return sock;
 
   // An out-of-range index yields undefined, which falls back to the socket below.
