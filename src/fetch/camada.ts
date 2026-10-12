@@ -13,6 +13,7 @@ import { resolveClientIp, type TrustedProxyConfig } from '../ip.js';
 import { hashUserId } from '../redact.js';
 import { guarded, guardedAsync, logRateLimited } from '../guarded.js';
 import { onBodyDone, copyResponse } from '../body.js';
+import { readBodyCapped } from '../body-cap.js';
 import { createChallengeAsync, type AsyncChallengeKit } from '../challenge/verify-async.js';
 import { challengePage } from '../challenge/page.js';
 import { challengeCookie, safeReturnTo, wantsHtml, parseFormBody, CHALLENGE_COOKIE } from '../challenge/format.js';
@@ -26,7 +27,6 @@ const FP_MAX = 32 * 1024;        // matches the analyst's /fp cap: never accept 
 export const SESSION_COOKIE = '_sfp';   // the same session cookie as every other tap: sid/ns stay comparable
 export const SESSION_MAX_AGE = 2592000;   // 30 days; exported so an adapter setting the cookie through its framework API matches
 const BODY_MAX = 4 * 1024;       // the verify form is ~120 bytes; anything larger is not ours
-const encoder = new TextEncoder();
 
 export type WaitUntil = (p: Promise<unknown>) => void;
 const noWait: WaitUntil = () => {};
@@ -231,9 +231,8 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
   /** 204 and a `sig: 1` row on the event batch — one request per flush at the analyst, not one per page view. */
   async function relayBeacon(eng: Engine, req: Request, ip: string | null, waitUntil: WaitUntil): Promise<Response> {
     const noContent = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
-    if (Number(req.headers.get('content-length')) > FP_MAX) return new Response(null, { status: 413 });
-    const body = await req.text();
-    if (encoder.encode(body).byteLength > FP_MAX) return new Response(null, { status: 413 });
+    const body = await readBodyCapped(req, FP_MAX);   // streamed: a chunked body cannot buffer past the cap
+    if (body === null) return new Response(null, { status: 413 });
     let parsed: unknown;
     try { parsed = JSON.parse(body); } catch { return noContent(); }   // not a beacon: drop it, never ship junk
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return noContent();
@@ -265,9 +264,8 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     const url = new URL(req.url);
     // camada answers this path before the app runs, so it must not become a place to post
     // hundreds of megabytes at an unauthenticated endpoint.
-    if (Number(req.headers.get('content-length')) > BODY_MAX) return new Response(null, { status: 413 });
-    const body = await req.text();
-    if (body.length > BODY_MAX) return new Response(null, { status: 413 });
+    const body = await readBodyCapped(req, BODY_MAX);
+    if (body === null) return new Response(null, { status: 413 });
     const form = parseFormBody(body);
     const to = safeReturnTo(form.to);
     const now = Date.now();
