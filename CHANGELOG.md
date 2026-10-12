@@ -7,6 +7,7 @@
 - `EventQueue` reads the status of the `/e` answer. A non-2xx logs `camada: /e answered <status>` (once a minute, like a thrown error), adds the batch to `dropped` and cancels the body; before, a 401 or 5xx was silent. A 429 puts the batch back at the head and holds delivery until `retry-after` (1 s to 60 s) without blocking `push()`; `maxQueue` still drops the oldest. (camada-all-a4m9)
 - `SnapshotClient` logs `camada: /snapshot answered <status>` when the poll gets a non-2xx. Pacing, keep-current and the body cancel are unchanged. (camada-all-a4m9)
 - `@camada/core/fetch`: in `timer` mode with no `waitUntil`, rows are only queued and the 15 s interval or exit flush ships them in batches, instead of one POST per request. A real `waitUntil` or `lazy` mode still flushes per row. (camada-all-7u3r)
+- `EventQueue` hardening: a `fetchImpl` that resolves to a non-`Response` no longer rejects `flush()`; a 429 hold ends on its timer, so a backward clock step cannot stall sending; the exit flush (`beforeExit`, SIGTERM, SIGINT) ignores a hold and counts rows still refused in `dropped`; 2xx bodies are cancelled too. (camada-all-a4m9)
 
 ### Changed
 
