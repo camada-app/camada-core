@@ -94,6 +94,10 @@ export interface FetchCamada {
    *  covers the stream; any other response is returned as it is and ships now (`dur` = time to
    *  first byte). Adds `x-rid` (see withRid), never changes the status, never buffers, never throws. */
   finish(req: Request, vars: FetchVars, res: Response): Response;
+  /** True when before() would act on a request with this context: a key (or the token pair) and no
+   *  `CAMADA_DISABLED=1`, from `ctx.env` overlaid with the options' `env`. For an adapter path that
+   *  is camada's only while camada is active. Builds nothing, logs nothing, never throws. */
+  active(ctx?: FetchRequestContext): boolean;
   /** Test/reset hook: stops and drops every cached engine. */
   reset(): void;
 }
@@ -407,5 +411,12 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     engines.clear();
   }
 
-  return { before, after, finish, reset };
+  function active(ctx: FetchRequestContext = {}): boolean {
+    return guarded(() => {
+      const env: Record<string, string | undefined> = { ...ctx.env, ...opts.env };
+      return env.CAMADA_DISABLED !== '1' && resolveFetchEnv(opts, env) !== null;
+    }, false);
+  }
+
+  return { before, after, finish, active, reset };
 }
