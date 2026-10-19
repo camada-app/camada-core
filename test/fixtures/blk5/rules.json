@@ -106,6 +106,22 @@
       "reason": "Skip the static mirror"
     },
     {
+      "id": "cr_00000000001f",
+      "name": "Skip a signed partner agent",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "^partner-[a-z]+$"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Skip a signed partner agent"
+    },
+    {
       "id": "cr_00000000000c",
       "name": "Block the dump API from outside the office",
       "action": "block",
@@ -257,6 +273,105 @@
       "expires": null,
       "builtin": null,
       "reason": "Challenge an old app build"
+    },
+    {
+      "id": "cr_000000000020",
+      "name": "Block a tab-separated agent",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "bad\\tagent"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block a tab-separated agent"
+    },
+    {
+      "id": "cr_000000000021",
+      "name": "Block a NUL-separated agent",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "nul\\x00agent"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block a NUL-separated agent"
+    },
+    {
+      "id": "cr_000000000022",
+      "name": "Block sqlmap",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "sqlmap"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block sqlmap"
+    },
+    {
+      "id": "cr_000000000023",
+      "name": "Block a tab-separated tool header",
+      "action": "block",
+      "conds": [
+        {
+          "field": "header",
+          "op": "matches",
+          "name": "x-tool",
+          "value": "bad\\ttool"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block a tab-separated tool header"
+    },
+    {
+      "id": "cr_000000000024",
+      "name": "Block a NUL-separated tool header",
+      "action": "block",
+      "conds": [
+        {
+          "field": "header",
+          "op": "matches",
+          "name": "x-tool",
+          "value": "nul\\x00tool"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block a NUL-separated tool header"
+    },
+    {
+      "id": "cr_000000000025",
+      "name": "Block sqlmap in a header",
+      "action": "block",
+      "conds": [
+        {
+          "field": "header",
+          "op": "matches",
+          "name": "x-tool",
+          "value": "sqlmap"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block sqlmap in a header"
     },
     {
       "id": "cr_000000000010",
@@ -556,6 +671,17 @@
       ]
     },
     {
+      "id": "cr_00000000001f",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "^partner-[a-z]+$"
+        }
+      ]
+    },
+    {
       "id": "cr_00000000000c",
       "action": "block",
       "conds": [
@@ -665,6 +791,75 @@
           "op": "matches",
           "name": "x-app-version",
           "value": "^1\\.[0-2]\\."
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000020",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "bad\\tagent"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000021",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "nul\\x00agent"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000022",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "sqlmap"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000023",
+      "action": "block",
+      "conds": [
+        {
+          "field": "header",
+          "op": "matches",
+          "name": "x-tool",
+          "value": "bad\\ttool"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000024",
+      "action": "block",
+      "conds": [
+        {
+          "field": "header",
+          "op": "matches",
+          "name": "x-tool",
+          "value": "nul\\x00tool"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000025",
+      "action": "block",
+      "conds": [
+        {
+          "field": "header",
+          "op": "matches",
+          "name": "x-tool",
+          "value": "sqlmap"
         }
       ]
     },

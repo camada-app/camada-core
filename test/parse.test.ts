@@ -254,9 +254,23 @@ describe('rule compilation', () => {
       expect(m.match({ ip: '8.8.8.8', header: () => 'ok\n' }).rule).toBe('cr_h');
       expect(m.match(ua('xa\tbx')).rule).toBe('cr_c');
     });
-    it('strips before measuring, and encodes controls in the raw path form', () => {
+    it('S5: a deny rule tests raw OR stripped (raw over the cap hits), a skip never matches a value with a control', () => {
       const m = withRules([block([{ f: 'ua', op: 'matches', v: '^never$' }])]);
-      expect(m.match(ua('a'.repeat(2048) + '\t')).block).toBe(false);
+      expect(m.match(ua('a'.repeat(2048) + '\t')).block).toBe(true);   // raw 2049 is over the cap, stripped 2048 would pass
+      const t = withRules([block([{ f: 'ua', op: 'matches', v: 'a\\tb' }], 'cr_t'), block([{ f: 'ua', op: 'matches', v: 'a\\x00b' }], 'cr_n'), block([{ f: 'header', op: 'matches', name: 'x-a', v: '^sqlmap$' }], 'cr_h')]);
+      expect(t.match(ua('xa\tb')).rule).toBe('cr_t');                    // a pattern that targets the control fires on the raw value
+      expect(t.match(ua('a\x00b')).rule).toBe('cr_n');
+      expect(t.match({ ip: '8.8.8.8', header: () => 'sql\tmap' }).rule).toBe('cr_h');   // stripped value meets the deny
+      const k = withRules([skip([{ f: 'ua', op: 'matches', v: '^partner-[a-z]+$' }]), block([{ f: 'ua', op: 'contains', v: 'partner' }])]);
+      expect(k.match(ua('partner-acme')).rule).toBe('cr_skip');
+      expect(k.match(ua('partner-acme\n')).rule).toBe('cr_test');       // no exemption: the deny rule beneath fires
+      const h = withRules([skip([{ f: 'header', op: 'matches', name: 'x-p', v: '^p$' }]), block([{ f: 'header', op: 'contains', name: 'x-p', v: 'p' }])]);
+      expect(h.match({ ip: '8.8.8.8', header: () => 'p\r' }).rule).toBe('cr_test');
+      expect(h.match({ ip: '8.8.8.8', header: () => 'p' }).rule).toBe('cr_skip');
+      const o = withRules([skip([{ f: 'ua', op: 'matches', v: '^a' }]), block([{ f: 'ua', op: 'contains', v: 'a' }])]);
+      expect(o.match(ua('a'.repeat(2047) + '\t')).rule).toBe('cr_test');  // raw 2048 matches '^a' by regex, but a control char means a skip never matches
+    });
+    it('encodes controls in the raw path form', () => {
       const p = withRules([block([{ f: 'path', op: 'matches', v: '^/dump$' }])]);
       expect(p.match({ ip: '8.8.8.8', path: '/dump\n' }).block).toBe(false);
       expect(p.match({ ip: '8.8.8.8', path: '/dump' }).block).toBe(true);

@@ -54,6 +54,7 @@ export function canonPath(raw: string | null | undefined, dots = true): string {
 
 /** The control characters a request may carry decoded: stripped from ua/header before a regex (parse.ts), %-encoded in the raw path form. */
 export const CTL_G = /[\x00-\x1f\x7f]/g;
+export const CTL_ANY = /[\x00-\x1f\x7f]/;   // non-global, safe for .test: the S5 one-scan check
 
 export function pathForms(raw: string | null | undefined): PathForms {
   const p = stripQuery(raw);
