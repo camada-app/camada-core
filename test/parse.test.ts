@@ -202,6 +202,40 @@ describe('rule compilation', () => {
 
   // §A4/§D3 header conditions. The getter is always called with a lower-cased name, so the
   // spelling the rule was written with (and the spelling on the wire) stop mattering here.
+  describe('regex cap and control characters (contract regex-cap-sdk)', () => {
+    const skip = (conds: SnapshotCondMeta[]): SnapshotRuleMeta => ({ id: 'cr_skip', action: 'skip', conds });
+    const ua = (v: string) => ({ ip: '8.8.8.8', ua: v });
+    it('evaluates exactly 2048 units and hits a deny rule above it, whatever the regex says', () => {
+      const m = withRules([block([{ f: 'ua', op: 'matches', v: '^never$' }])]);
+      expect(m.match(ua('a'.repeat(2048))).block).toBe(false);
+      expect(m.match(ua('a'.repeat(2049))).block).toBe(true);
+    });
+    it('counts UTF-16 units, not code points or bytes', () => {
+      const m = withRules([block([{ f: 'ua', op: 'matches', v: '^never$' }])]);
+      expect(m.match(ua('\u00e9'.repeat(2048))).block).toBe(false);
+      expect(m.match(ua('\u{1F600}'.repeat(1024))).block).toBe(false);
+      expect(m.match(ua('\u{1F600}'.repeat(1025))).block).toBe(true);
+    });
+    it('misses a skip rule over the cap, so the deny rule beneath it fires', () => {
+      const m = withRules([skip([{ f: 'ua', op: 'matches', v: '^up' }]), block([{ f: 'ua', op: 'contains', v: 'up' }])]);
+      expect(m.match(ua('up' + 'a'.repeat(2046))).rule).toBe('cr_skip');
+      expect(m.match(ua('up' + 'a'.repeat(2047))).rule).toBe('cr_test');
+    });
+    it('deletes control characters before a ua or header regex, and leaves contains alone', () => {
+      const m = withRules([block([{ f: 'ua', op: 'matches', v: '^sqlmap$' }]), block([{ f: 'header', op: 'matches', name: 'x-a', v: '^ok$' }], 'cr_h'), block([{ f: 'ua', op: 'contains', v: 'a\tb' }], 'cr_c')]);
+      expect(m.match(ua('sql\tmap')).block).toBe(true);
+      expect(m.match({ ip: '8.8.8.8', header: () => 'ok\n' }).rule).toBe('cr_h');
+      expect(m.match(ua('xa\tbx')).rule).toBe('cr_c');
+    });
+    it('strips before measuring, and encodes controls in the raw path form', () => {
+      const m = withRules([block([{ f: 'ua', op: 'matches', v: '^never$' }])]);
+      expect(m.match(ua('a'.repeat(2048) + '\t')).block).toBe(false);
+      const p = withRules([block([{ f: 'path', op: 'matches', v: '^/dump$' }])]);
+      expect(p.match({ ip: '8.8.8.8', path: '/dump\n' }).block).toBe(false);
+      expect(p.match({ ip: '8.8.8.8', path: '/dump' }).block).toBe(true);
+    });
+  });
+
   describe('header conditions', () => {
     const hdr = (headers: Record<string, string>) => ({ ip: '8.8.8.8', header: (n: string) => headers[n] ?? null });
 
