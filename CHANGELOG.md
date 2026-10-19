@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.3 (2026-10-19; follows 0.5.2)
+
+### Security
+
+- Custom-rule `matches` regex input is capped at 2048 chars (UTF-16 units), fail-closed: an
+  over-cap ua, header or path value is a hit for block/challenge/warn and a miss for skip/allow,
+  never truncated (truncation would fail a deny rule open). (camada-all-q980)
+- Control characters never reach the matcher alone: a ua/header value carrying `[\x00-\x1f\x7f]`
+  is tested raw and stripped for deny rules (a pattern that targets a control char still fires,
+  `sql<TAB>map` still meets `sqlmap`), and never matches a skip/allow rule, so stripping cannot
+  widen an exemption. The raw path form %-encodes the same characters. (camada-all-q980,
+  camada-all-wh9m)
+- A regex engine failure fails closed: a `RangeError` from `RegExp.test` in a custom-rule
+  `matches` condition or a path predicate is a hit for deny rules and a miss for skip, instead of
+  escaping or reading as a miss. (camada-all-5jpb)
+- blk5 conformance fixtures (RC01-RC47) carry the shared vectors for all of the above
+  (contract regex-cap-sdk v3).
+
 ## 0.5.2 (2026-10-12; follows 0.5.1)
 
 ### Fixed
