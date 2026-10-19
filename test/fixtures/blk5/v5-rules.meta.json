@@ -206,6 +206,17 @@
       ]
     },
     {
+      "id": "cr_00000000001f",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "ua",
+          "op": "matches",
+          "v": "^partner-[a-z]+$"
+        }
+      ]
+    },
+    {
       "id": "cr_00000000000c",
       "action": "block",
       "conds": [
@@ -308,6 +319,75 @@
           "op": "matches",
           "name": "x-app-version",
           "v": "^1\\.[0-2]\\."
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000020",
+      "action": "block",
+      "conds": [
+        {
+          "f": "ua",
+          "op": "matches",
+          "v": "bad\\tagent"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000021",
+      "action": "block",
+      "conds": [
+        {
+          "f": "ua",
+          "op": "matches",
+          "v": "nul\\x00agent"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000022",
+      "action": "block",
+      "conds": [
+        {
+          "f": "ua",
+          "op": "matches",
+          "v": "sqlmap"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000023",
+      "action": "block",
+      "conds": [
+        {
+          "f": "header",
+          "op": "matches",
+          "name": "x-tool",
+          "v": "bad\\ttool"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000024",
+      "action": "block",
+      "conds": [
+        {
+          "f": "header",
+          "op": "matches",
+          "name": "x-tool",
+          "v": "nul\\x00tool"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000025",
+      "action": "block",
+      "conds": [
+        {
+          "f": "header",
+          "op": "matches",
+          "name": "x-tool",
+          "v": "sqlmap"
         }
       ]
     },
