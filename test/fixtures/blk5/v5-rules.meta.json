@@ -172,6 +172,40 @@
       ]
     },
     {
+      "id": "cr_00000000001c",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "ua",
+          "op": "matches",
+          "v": "^uptime-probe/[0-9]"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000001d",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "header",
+          "op": "matches",
+          "name": "x-partner",
+          "v": "^partner-[a-z]+$"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000001e",
+      "action": "skip",
+      "conds": [
+        {
+          "f": "path",
+          "op": "matches",
+          "v": "^/static-mirror/"
+        }
+      ]
+    },
+    {
       "id": "cr_00000000000c",
       "action": "block",
       "conds": [

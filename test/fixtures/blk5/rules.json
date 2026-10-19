@@ -57,6 +57,55 @@
       "reason": "Skip our monitoring range"
     },
     {
+      "id": "cr_00000000001c",
+      "name": "Skip our uptime agent",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "^uptime-probe/[0-9]"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Skip our uptime agent"
+    },
+    {
+      "id": "cr_00000000001d",
+      "name": "Skip a signed partner header",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "header",
+          "op": "matches",
+          "name": "x-partner",
+          "value": "^partner-[a-z]+$"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Skip a signed partner header"
+    },
+    {
+      "id": "cr_00000000001e",
+      "name": "Skip the static mirror",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "path",
+          "op": "matches",
+          "value": "^/static-mirror/"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Skip the static mirror"
+    },
+    {
       "id": "cr_00000000000c",
       "name": "Block the dump API from outside the office",
       "action": "block",
@@ -469,6 +518,40 @@
             "192.0.2.128/25",
             "2001:db8:cafe::/48"
           ]
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000001c",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "^uptime-probe/[0-9]"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000001d",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "header",
+          "op": "matches",
+          "name": "x-partner",
+          "value": "^partner-[a-z]+$"
+        }
+      ]
+    },
+    {
+      "id": "cr_00000000001e",
+      "action": "skip",
+      "conds": [
+        {
+          "field": "path",
+          "op": "matches",
+          "value": "^/static-mirror/"
         }
       ]
     },

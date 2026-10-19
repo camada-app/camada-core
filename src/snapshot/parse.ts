@@ -18,7 +18,7 @@
 // The version byte is advisory: sections 10-15 are read whenever they are present.
 // Every path value is canonicalised once here (./path.ts, contracts §D3 "Path matching").
 
-import { canonPath, dirKey, pathHit, pathPred, type PathForms } from './path.js';
+import { canonPath, CTL_G, dirKey, MAX_MATCH_INPUT, pathHit, pathPred, type PathForms } from './path.js';
 
 /** The non-IP half of a v4 side list (allow or challenge). */
 export interface SnapshotSetMeta {
@@ -198,7 +198,12 @@ function compileCond(c: SnapshotCondMeta, sets: Array<[Uint32Array, Uint32Array]
   if (c.op === 'matches') {
     let re: RegExp | null = null;
     try { re = new RegExp(values[0]); } catch { re = null; }   // a pattern this runtime rejects never matches, and never throws
-    return (r) => { const v = read(r); return v !== null && !!re && re.test(v); };
+    const strip = c.f === 'ua' || c.f === 'header';   // contract regex-cap-sdk S2: controls deleted before a regex, matches only
+    return (r) => {
+      let v = read(r);
+      if (v !== null && strip) v = v.replace(CTL_G, '');
+      return v !== null && !!re && (v.length > MAX_MATCH_INPUT ? deny : re.test(v));   // S1: over the cap the regex never runs
+    };
   }
   if (c.op === 'contains') return (r) => { const v = read(r); return v !== null && v.includes(values[0]); };
   if (c.op === 'starts_with') return (r) => { const v = read(r); return v !== null && v.startsWith(values[0]); };
