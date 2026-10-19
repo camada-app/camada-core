@@ -52,10 +52,13 @@ export function canonPath(raw: string | null | undefined, dots = true): string {
   return '/' + out.join('/');
 }
 
+/** The control characters a request may carry decoded: stripped from ua/header before a regex (parse.ts), %-encoded in the raw path form. */
+export const CTL_G = /[\x00-\x1f\x7f]/g;
+
 export function pathForms(raw: string | null | undefined): PathForms {
   const p = stripQuery(raw);
   if (p === '/' || CANON.test(p)) return [p, p, p];
-  return [p, canonPath(p, false), canonPath(p, true)];
+  return [p.replace(CTL_G, (c) => '%' + HEX[c.charCodeAt(0) >> 4] + HEX[c.charCodeAt(0) & 15]), canonPath(p, false), canonPath(p, true)];   // raw form: controls as lower-case %xx (contract regex-cap-sdk S3)
 }
 
 const dir = (p: string): string => (p.endsWith('/') ? p : p + '/');
@@ -69,16 +72,22 @@ export function prefixHit(prefixes: Set<string>, path: string): boolean {
   return false;
 }
 
-/** Does `pred` hold for this request? deny = any spelling; an exemption = both canonical forms. */
-export const pathHit = (pred: (p: string) => boolean, forms: PathForms, deny: boolean): boolean =>
-  deny ? pred(forms[0]) || pred(forms[1]) || pred(forms[2]) : pred(forms[1]) && pred(forms[2]);
+/** A `matches` rule tests at most this many UTF-16 code units of a path, user agent or header value (contract regex-cap-sdk S1).
+ *  A longer value is never truncated: the regex does not run, and the value is a hit for a deny rule (block/challenge/warn)
+ *  and a miss for a skip. */
+export const MAX_MATCH_INPUT = 2048;
+
+/** Does `pred` hold for this request? deny = any spelling; an exemption = both canonical forms. `deny` also tells a
+ *  `matches` predicate what an over-cap form answers. */
+export const pathHit = (pred: (p: string, deny: boolean) => boolean, forms: PathForms, deny: boolean): boolean =>
+  deny ? pred(forms[0], true) || pred(forms[1], true) || pred(forms[2], true) : pred(forms[1], false) && pred(forms[2], false);
 
 /** One v5 path condition -> a predicate over a single path form. A regex this runtime rejects never matches. */
-export function pathPred(op: string, values: string[]): (p: string) => boolean {
+export function pathPred(op: string, values: string[]): (p: string, deny: boolean) => boolean {
   if (op === 'matches') {
     let re: RegExp | null = null;
     try { re = new RegExp(values[0], 'i'); } catch { re = null; }
-    return (p) => !!re && re.test(p);
+    return (p, deny) => !!re && (p.length > MAX_MATCH_INPUT ? deny : re.test(p));
   }
   if (op === 'starts_with') {
     const v = values[0], key = v.endsWith('/') ? dirKey(v) : canonPath(v);
