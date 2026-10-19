@@ -87,7 +87,11 @@ export function pathPred(op: string, values: string[]): (p: string, deny: boolea
   if (op === 'matches') {
     let re: RegExp | null = null;
     try { re = new RegExp(values[0], 'i'); } catch { re = null; }
-    return (p, deny) => !!re && (p.length > MAX_MATCH_INPUT ? deny : re.test(p));
+    return (p, deny) => {
+      if (!re) return false;
+      if (p.length > MAX_MATCH_INPUT) return deny;
+      try { return re.test(p); } catch { return deny; }   // S4: a match-time failure answers like over-cap
+    };
   }
   if (op === 'starts_with') {
     const v = values[0], key = v.endsWith('/') ? dirKey(v) : canonPath(v);

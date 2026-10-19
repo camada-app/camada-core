@@ -202,7 +202,9 @@ function compileCond(c: SnapshotCondMeta, sets: Array<[Uint32Array, Uint32Array]
     return (r) => {
       let v = read(r);
       if (v !== null && strip) v = v.replace(CTL_G, '');
-      return v !== null && !!re && (v.length > MAX_MATCH_INPUT ? deny : re.test(v));   // S1: over the cap the regex never runs
+      if (v === null || !re) return false;
+      if (v.length > MAX_MATCH_INPUT) return deny;   // S1: over the cap the regex never runs
+      try { return re.test(v); } catch { return deny; }   // S4: a match-time failure (RangeError) answers like over-cap
     };
   }
   if (c.op === 'contains') return (r) => { const v = read(r); return v !== null && v.includes(values[0]); };
