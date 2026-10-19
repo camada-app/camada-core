@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parseSnapshot, Matcher, type SnapshotRuleMeta, type SnapshotCondMeta } from '../src/index.js';
 
@@ -146,6 +146,33 @@ describe('rule compilation', () => {
     const m = withRules([block([{ f: 'path', op: 'matches', v: '^/(unclosed' }])]);
     expect(m.snap.rules).toHaveLength(1);                                // compiled, but inert
     expect(m.match({ ip: '8.8.8.8', path: '/(unclosed' }).block).toBe(false);
+  });
+
+  // contract regex-cap-sdk S4: a regex that throws while testing answers like an over-cap value.
+  describe('a regex that throws at match time (S4)', () => {
+    afterEach(() => vi.restoreAllMocks());
+    // Only the rule's pattern throws; the engine's own regexes (path canonicalisation) still run.
+    const throwing = () => {
+      const real = RegExp.prototype.test;
+      vi.spyOn(RegExp.prototype, 'test').mockImplementation(function (this: RegExp, v: string) {
+        if (this.source === 'x') throw new RangeError('Maximum call stack size exceeded');
+        return real.call(this, v);
+      });
+    };
+    const skip = (conds: SnapshotCondMeta[]): SnapshotRuleMeta => ({ id: 'cr_skip', action: 'skip', conds });
+
+    it.each(['ua', 'path'])('hits a deny rule on %s', (f) => {
+      const m = withRules([block([{ f, op: 'matches', v: 'x' }])]);
+      throwing();
+      expect(m.match({ ip: '8.8.8.8', ua: 'x', path: '/x' }).block).toBe(true);
+    });
+
+    it.each(['ua', 'path'])('misses a skip rule on %s', (f) => {
+      const m = withRules([skip([{ f, op: 'matches', v: 'x' }]), block([{ f: 'ip', op: 'is_not', v: '1.1.1.1' }], 'cr_after')]);
+      throwing();
+      const r = m.match({ ip: '8.8.8.8', ua: 'x', path: '/x' });
+      expect(r.allowed).toBe(false);
+    });
   });
 
   // 'allow' is in that set now: round 2 collapsed it into skip, and a server still publishing
