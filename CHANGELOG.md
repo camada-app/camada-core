@@ -14,6 +14,11 @@
   visitor's body before queuing the `sig: 1` row, so a visitor cannot forge them; the analyst
   joins those from the request row. (camada-all-q617)
 
+### Added
+
+- `REQUEST_ROW_KEYS` (frozen) is exported from `@camada/core`: the one list of SDK-attested keys
+  the beacon relays strip, shared by `@camada/core/fetch` and `@camada/node`. (camada-all-0hh5)
+
 ## 0.5.3 (2026-10-19; follows 0.5.2)
 
 ### Security
