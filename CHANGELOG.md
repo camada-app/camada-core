@@ -9,6 +9,10 @@
   `netlify-cdn-cache-control` to `no-store`, overriding the app's. CDNs read those ahead of
   `cache-control`, so an app-set one could still let a shared cache keep the per-client copy.
   (camada-all-5pog)
+- The first-party beacon relay (`/_cam/fp`) drops SDK-attested keys (`tlsx`, `ja4`, `asn`,
+  `cc`, `sid`, `ns`, `st`, `dur`, `rt`, `blk`, `rl`, `wrn`, `chs`, `ch`, `et`, `uid`) from the
+  visitor's body before queuing the `sig: 1` row, so a visitor cannot forge them; the analyst
+  joins those from the request row. (camada-all-q617)
 
 ## 0.5.3 (2026-10-19; follows 0.5.2)
 
