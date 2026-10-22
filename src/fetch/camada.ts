@@ -394,14 +394,12 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       if (!ev) return;
       const path = ev.p as string;
       const cfg = eng.snap.config;
-      if (!vars.signalled) {   // a signalled row ships whatever sample and exclude say, like the 403 row it replaces
-        if ((cfg?.exclude || []).some((x) => path.startsWith(x))) return;
-        if (Math.random() >= (cfg?.sample ?? 1)) return;
-      }
+      // a signalled row ships whatever sample and exclude say, like the 403 row it replaces
+      if (vars.signalled) ev.chs = 1;   // challenge signalled (contract §A3)
+      else if ((cfg?.exclude || []).some((x) => path.startsWith(x)) || Math.random() >= (cfg?.sample ?? 1)) return;
       ev.ts = vars.t0;   // the request start: the timeline draws [ts, ts + dur]
       ev.st = status;
       ev.dur = status === null ? null : Math.max(0, Date.now() - vars.t0);   // request start → response settled; unknown where the response is unseen
-      if (vars.signalled) ev.chs = 1;   // challenge signalled (contract §A3)
       if (vars.warnRule) ev.wrn = vars.warnRule;   // §D3: the warn rule that let this request through
       ship(eng, ev, vars.waitUntil);
     }, undefined);

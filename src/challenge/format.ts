@@ -64,7 +64,8 @@ export function safeReturnTo(raw: string | null | undefined): string {
 }
 
 /** A challenge page is only worth serving to a top-level HTML navigation (contract §D2:
- *  "Accept without text/html, or sec-fetch-dest not document" gets 403 JSON instead). */
+ *  "Accept without text/html, or sec-fetch-dest not document"). Other requests pass, signalled
+ *  (`x-camada-challenge: 1`), except a navigation data request the adapter flags. */
 export function wantsHtml(accept: string | null, secFetchDest: string | null): boolean {
   if (!accept || accept.indexOf('text/html') === -1) return false;
   return !secFetchDest || secFetchDest === 'document';
