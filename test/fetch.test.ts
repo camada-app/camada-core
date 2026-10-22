@@ -829,6 +829,16 @@ describe('first-party beacon', () => {
     expect(events[0].st).toBeUndefined();
   });
 
+  it('strips SDK-attested keys a visitor puts in the beacon body', async () => {
+    const a = await primed();
+    const forged = Object.fromEntries(['tlsx', 'ja4', 'asn', 'cc', 'sid', 'ns', 'st', 'dur', 'rt', 'blk', 'rl', 'wrn', 'chs', 'ch', 'et', 'uid'].map((k) => [k, 'forged']));
+    const res = await postBeacon(a, JSON.stringify({ rid: 'abc', tz: 'UTC', ...forged }));
+    expect(res.status).toBe(204);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ sig: 1, rid: 'abc', tz: 'UTC', ip: '9.9.9.9', tap: 'sdk-bun' });
+    for (const k of Object.keys(forged)) expect(events[0]).not.toHaveProperty(k);
+  });
+
   it('joins the beacon to the page event on rid', async () => {
     const a = await primed();
     const html = await (await call(a, '/page')).text();
