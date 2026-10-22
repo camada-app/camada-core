@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { resolveClientIp, parseTrustedProxyEnv, type TrustedProxyConfig } from '../src/index.js';
+import { resolveClientIp, isTrustedPeer, parseTrustedProxyEnv, type TrustedProxyConfig } from '../src/index.js';
 
 // Shared conformance fixture (contract C6): every server SDK runs the same cases.
 interface IpCase { id: string; ticket: string; config: string; peer: string | null; xff: string | null; expect: string | null; note?: string }
@@ -83,5 +83,47 @@ describe('parseTrustedProxyEnv', () => {
     expect(parseTrustedProxyEnv('cidrs:')).toBeNull();
     expect(parseTrustedProxyEnv('cidrs: ,')).toBeNull();
     expect(parseTrustedProxyEnv('junk')).toBeNull();
+  });
+});
+
+describe('isTrustedPeer', () => {
+  const PROBE = '8.8.4.4';   // public, outside every cidrs list below, so the walk proves trust
+  const cfgOf = (...cidrs: string[]): TrustedProxyConfig => ({ mode: 'cidrs', cidrs });
+  const table: Array<[string, string, TrustedProxyConfig]> = [
+    ['v4 in range', '192.0.2.77', cfgOf('192.0.2.0/24')],
+    ['v4 out of range', '192.0.3.1', cfgOf('192.0.2.0/24')],
+    ['v6 in range', '2001:db8::5', cfgOf('2001:db8::/32')],
+    ['v6 out of range', '2001:db9::5', cfgOf('2001:db8::/32')],
+    ['mapped in range', '::ffff:192.0.2.9', cfgOf('192.0.2.0/24')],
+    ['mapped out of range', '::ffff:192.0.3.9', cfgOf('192.0.2.0/24')],
+    ['loopback v4', '127.0.0.1', cfgOf('192.0.2.0/24')],
+    ['loopback 127.5.5.5', '127.5.5.5', cfgOf('192.0.2.0/24')],
+    ['loopback v6', '::1', cfgOf('192.0.2.0/24')],
+    ['mapped loopback', '::ffff:127.0.0.1', cfgOf('192.0.2.0/24')],
+    ['invalid with port', '1.2.3.4:80', cfgOf('1.2.3.0/24')],
+    ['invalid unix', 'unix:/x', cfgOf('0.0.0.0/0')],
+    ['invalid @', '@', cfgOf('0.0.0.0/0')],
+    ['/32 hit', '192.0.2.5', cfgOf('192.0.2.5/32')],
+    ['/32 miss', '192.0.2.6', cfgOf('192.0.2.5/32')],
+    ['unparseable entry ignored', '192.0.2.5', cfgOf('garbage', '192.0.2.0/24')],
+    ['only unparseable entries', '192.0.2.5', cfgOf('garbage', '1.2.3.4/99')],
+  ];
+
+  it.each(table)('agrees with the cidrs walk: %s', (_n, peer, cfg) => {
+    expect(isTrustedPeer(peer, cfg)).toBe(resolveClientIp(peer, PROBE, cfg) === PROBE);
+  });
+
+  it('trusts every valid v4 peer under /0 (the probe is trusted too, so no walk comparison)', () => {
+    expect(isTrustedPeer('203.0.113.7', cfgOf('0.0.0.0/0'))).toBe(true);
+    expect(isTrustedPeer('unix:/x', cfgOf('0.0.0.0/0'))).toBe(false);
+  });
+
+  it('is false without a peer', () => {
+    for (const p of [null, undefined, '']) expect(isTrustedPeer(p, cfgOf('0.0.0.0/0'))).toBe(false);
+  });
+
+  it('is false outside cidrs mode', () => {
+    for (const cfg of [{ mode: 'none' }, { mode: 'hops', hops: 1 }, { mode: 'vercel' }, null, undefined] as Array<TrustedProxyConfig | null | undefined>)
+      expect(isTrustedPeer('127.0.0.1', cfg)).toBe(false);
   });
 });
