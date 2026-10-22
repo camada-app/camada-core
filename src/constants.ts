@@ -16,6 +16,10 @@ export type Tap =
 
 export const DEFAULT_REFRESH_MS = 30_000;
 
+// Row keys only the SDK can attest (TLS/network facts, outcome, session, track()). A beacon body is the
+// visitor's, so these never ride a sig:1 row; the analyst joins them from the beacon's request row.
+export const REQUEST_ROW_KEYS: readonly string[] = Object.freeze(['tlsx', 'ja4', 'asn', 'cc', 'sid', 'ns', 'st', 'dur', 'rt', 'blk', 'rl', 'wrn', 'chs', 'ch', 'et', 'uid']);
+
 /** Snapshot containers this SDK family can read (§D3). 5 carries the tenant's ordered custom
  *  rules on top of v4's allow/challenge sides; a tenant without one is answered with the next
  *  container down, so asking for 5 is always safe. */
