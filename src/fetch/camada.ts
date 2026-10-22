@@ -149,9 +149,9 @@ export function withSetCookie(res: Response, cookie: string): Response {
 }
 
 /** Sets `x-rid` (the rid of this request's event row, so support can find it from a response), and
- *  `x-camada-challenge: 1` when the request was signalled, on the response, or on a faithful copy when its headers are immutable. Never on a 101 handshake. */
+ *  `x-camada-challenge: 1` and `cache-control: no-store` (the header is per client, so no shared cache may keep the copy; it overrides the app's) when the request was signalled, on the response, or on a faithful copy when its headers are immutable. Never on a 101 handshake. */
 export function withRid(res: Response, vars: Pick<FetchVars, 'rid'> & Partial<Pick<FetchVars, 'signalled'>>): Response {
-  return res.status === 101 ? res : editHeaders(res, (h) => { h.set('x-rid', vars.rid); if (vars.signalled) h.set('x-camada-challenge', '1'); });
+  return res.status === 101 ? res : editHeaders(res, (h) => { h.set('x-rid', vars.rid); if (vars.signalled) { h.set('x-camada-challenge', '1'); h.set('cache-control', 'no-store'); } });
 }
 
 /**
