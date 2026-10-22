@@ -17,16 +17,13 @@ import { readBodyCapped } from '../body-cap.js';
 import { createChallengeAsync, type AsyncChallengeKit } from '../challenge/verify-async.js';
 import { challengePage, challengePageCsp } from '../challenge/page.js';
 import { challengeCookie, safeReturnTo, wantsHtml, parseFormBody, CHALLENGE_COOKIE } from '../challenge/format.js';
-import { DEFAULT_SNAPSHOT_VERSION, type Tap } from '../constants.js';
+import { DEFAULT_SNAPSHOT_VERSION, REQUEST_ROW_KEYS, type Tap } from '../constants.js';
 import { resolveFetchEnv, type FetchCamadaOptions, type ResolvedFetchEnv } from './env.js';
 
 const DEFAULT_CHALLENGE_PATH = '/__camada/challenge';
 const SCRIPT_PATH = '/_cam/b.js';   // the beacon IIFE; its auto-init posts to the sibling `fp` and reads the rid from ?r=
 const FP_PATH = '/_cam/fp';
 const FP_MAX = 32 * 1024;        // matches the analyst's /fp cap: never accept what ingest will 413
-// Row keys only the SDK can attest (TLS/network facts, outcome, session, track()). A beacon body is the
-// visitor's, so these never ride a sig:1 row; the analyst joins them from the beacon's request row.
-const REQUEST_ROW_KEYS = ['tlsx', 'ja4', 'asn', 'cc', 'sid', 'ns', 'st', 'dur', 'rt', 'blk', 'rl', 'wrn', 'chs', 'ch', 'et', 'uid'];
 export const SESSION_COOKIE = '_sfp';   // the same session cookie as every other tap: sid/ns stay comparable
 export const SESSION_MAX_AGE = 2592000;   // 30 days; exported so an adapter setting the cookie through its framework API matches
 const BODY_MAX = 4 * 1024;       // the verify form is ~120 bytes; anything larger is not ours
