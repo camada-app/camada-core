@@ -76,6 +76,7 @@ function app(opts: FetchCamadaOptions = {}, ids: FetchIdentity = { tap: TAP_BUN,
     if (pathname === '/checkout') return html('<p>checkout</p>');
     if (pathname === '/admin/users') return html('<p>admin</p>');
     if (pathname === '/healthz') return new Response('ok');
+    if (pathname === '/cc') return new Response('{}', { headers: { 'cache-control': 'public, max-age=300' } });
     if (pathname === '/stream') return new Response(slowBody(3, 40), { headers: { 'content-type': 'text/event-stream' } });   // ~120 ms of body after the handler returned
     if (pathname === '/plain-stream') return new Response(slowBody(3, 40));   // streamed, but nothing says so: ships at return
     if (pathname === '/page') return html(`<html><head>${scriptTag(vars)}</head><body>page</body></html>`);
@@ -541,6 +542,13 @@ describe('challenge', () => {
     expect(res.headers.get('x-rid')).toBe(a.lastVars!.rid);
     expect(events.find((e) => e.p === '/checkout')).toMatchObject({ st: 200, chs: 1, rid: a.lastVars!.rid });
     expect(events.some((e) => e.blk)).toBe(false);
+  });
+
+  it('forces no-store on a signalled response, over the app\'s; an unsignalled one keeps its own (82ar)', async () => {
+    const a = await primed();
+    const json = { headers: { accept: 'application/json' } };
+    expect((await call(a, '/cc', json, ip(CHALLENGED_IP))).headers.get('cache-control')).toBe('no-store');
+    expect((await call(a, '/cc', json)).headers.get('cache-control')).toBe('public, max-age=300');
   });
 
   it('ships the signalled row at sample 0 and on an excluded path', async () => {
