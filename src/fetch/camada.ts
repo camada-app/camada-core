@@ -29,6 +29,8 @@ export const SESSION_MAX_AGE = 2592000;   // 30 days; exported so an adapter set
 const BODY_MAX = 4 * 1024;       // the verify form is ~120 bytes; anything larger is not ours
 
 export type WaitUntil = (p: Promise<unknown>) => void;
+/** Per-client signal: no shared cache may keep the copy. CDNs read their own header ahead of cache-control. */
+const NO_STORE_HEADERS = ['cache-control', 'cdn-cache-control', 'surrogate-control', 'cloudflare-cdn-cache-control', 'vercel-cdn-cache-control', 'netlify-cdn-cache-control'];
 const noWait: WaitUntil = () => {};
 
 /** Who this adapter is on the wire: its tap, its `x-camada-sdk` value, and the beacon it serves. */
@@ -149,9 +151,9 @@ export function withSetCookie(res: Response, cookie: string): Response {
 }
 
 /** Sets `x-rid` (the rid of this request's event row, so support can find it from a response), and
- *  `x-camada-challenge: 1` and `cache-control: no-store` (the header is per client, so no shared cache may keep the copy; it overrides the app's) when the request was signalled, on the response, or on a faithful copy when its headers are immutable. Never on a 101 handshake. */
+ *  `x-camada-challenge: 1` and `no-store` on cache-control and the CDN-specific cache headers (the header is per client, so no shared cache may keep the copy; it overrides the app's) when the request was signalled, on the response, or on a faithful copy when its headers are immutable. Never on a 101 handshake. */
 export function withRid(res: Response, vars: Pick<FetchVars, 'rid'> & Partial<Pick<FetchVars, 'signalled'>>): Response {
-  return res.status === 101 ? res : editHeaders(res, (h) => { h.set('x-rid', vars.rid); if (vars.signalled) { h.set('x-camada-challenge', '1'); h.set('cache-control', 'no-store'); } });
+  return res.status === 101 ? res : editHeaders(res, (h) => { h.set('x-rid', vars.rid); if (vars.signalled) { h.set('x-camada-challenge', '1'); for (const n of NO_STORE_HEADERS) h.set(n, 'no-store'); } });
 }
 
 /**
