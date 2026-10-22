@@ -51,6 +51,10 @@ export interface FetchRequestContext {
   httpVersion?: string | null;   // the client's own protocol, e.g. '2' — only when the host really knows it
   waitUntil?: WaitUntil;
   env?: Record<string, string | undefined>;
+  /** A client-side navigation's data request (React Router `.data`, SvelteKit `__data.json`): under a
+   *  challenge it is answered 403 like a page, so the router turns it into a document load that meets the page.
+   *  Every other non-HTML request passes with a signal (`x-camada-challenge: 1`, `chs: 1`). */
+  navigation?: boolean;
 }
 
 export interface Engine {
@@ -72,6 +76,7 @@ export interface FetchVars {
   sessionCookie: string | null;   // the `set-cookie` value to send when the session is new; null otherwise
   ip: string | null;
   warnRule: string | null;        // §D3: the warn rule that let this request through
+  signalled: boolean;             // non-HTML request that passed under a challenge: `x-camada-challenge: 1` and `chs: 1`, never sampled out or excluded (82ar)
   scriptPath: string;
   waitUntil: WaitUntil;
   facts: Facts;
@@ -143,10 +148,10 @@ export function withSetCookie(res: Response, cookie: string): Response {
   return editHeaders(res, (h) => h.append('set-cookie', cookie));
 }
 
-/** Sets `x-rid` (the rid of this request's event row, so support can find it from a response) on
- *  the response, or on a faithful copy when its headers are immutable. Never on a 101 handshake. */
-export function withRid(res: Response, vars: Pick<FetchVars, 'rid'>): Response {
-  return res.status === 101 ? res : editHeaders(res, (h) => h.set('x-rid', vars.rid));
+/** Sets `x-rid` (the rid of this request's event row, so support can find it from a response), and
+ *  `x-camada-challenge: 1` when the request was signalled, on the response, or on a faithful copy when its headers are immutable. Never on a 101 handshake. */
+export function withRid(res: Response, vars: Pick<FetchVars, 'rid'> & Partial<Pick<FetchVars, 'signalled'>>): Response {
+  return res.status === 101 ? res : editHeaders(res, (h) => { h.set('x-rid', vars.rid); if (vars.signalled) h.set('x-camada-challenge', '1'); });
 }
 
 /**
@@ -247,7 +252,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     return noContent();
   }
 
-  /** 403 + the proof-of-work page (HTML navigations) or 403 JSON, plus the `blk: "challenge"` event. */
+  /** 403 + the proof-of-work page (HTML navigations) or, for a data-request navigation only, 403 JSON, plus the `blk: "challenge"` event. */
   async function serve(eng: Engine, req: Request, ip: string, sid: string | null, facts: Facts, target: string, waitUntil: WaitUntil): Promise<Response> {
     const url = new URL(req.url);
     const ev = buildEvent(req, url.pathname, url.search, ip, sid, facts);
@@ -311,6 +316,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       const url = new URL(req.url);
       const path = url.pathname;
       const cookies = req.headers.get('cookie') || '';
+      let signalled = false;
       const ip = clientIp(eng, req, ctx);
       const sid = cookieValue(cookies, SESSION_COOKIE);
 
@@ -341,7 +347,11 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
         if (req.method === 'POST' && path === challengePath) return { response: await verify(eng, req, ip, sid, facts, waitUntil) };
         const token = cookieValue(cookies, CHALLENGE_COOKIE);
         if (v.challenge && !(await eng.kit.tokenValid(ip, Date.now(), token))) {
-          return { response: await serve(eng, req, ip, sid, facts, path + url.search, waitUntil) };
+          // Only a page or a navigation can be challenged; any other request passes, signalled (82ar).
+          if (ctx.navigation || wantsHtml(req.headers.get('accept'), req.headers.get('sec-fetch-dest'))) {
+            return { response: await serve(eng, req, ip, sid, facts, path + url.search, waitUntil) };
+          }
+          signalled = true;
         }
       }
 
@@ -364,7 +374,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       const sessionCookie = newSession ? `${SESSION_COOKIE}=${mintedSid}; Path=/; Max-Age=${SESSION_MAX_AGE}; HttpOnly; SameSite=Lax${secure}` : null;
       const rid = crypto.randomUUID();
       const ev = buildEvent(req, path, url.search, ip, mintedSid, facts, rid, newSession);
-      return { vars: { eng, rid, sid: mintedSid, newSession, sessionCookie, ip, warnRule, scriptPath, waitUntil, facts, t0, ev } };
+      return { vars: { eng, rid, sid: mintedSid, newSession, sessionCookie, ip, warnRule, signalled, scriptPath, waitUntil, facts, t0, ev } };
     }, undefined);
 
     // The guard threw before deciding: let the app run and still ship its event, with fresh ids
@@ -374,7 +384,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     const ip = guarded(() => clientIp(eng, req, ctx), null);
     const rid = crypto.randomUUID();
     const ev = guarded(() => { const url = new URL(req.url); return buildEvent(req, url.pathname, url.search, ip, null, facts, rid); }, null);
-    return { vars: { eng, rid, sid: null, newSession: false, sessionCookie: null, ip, warnRule: null, scriptPath, waitUntil, facts, t0, ev } };
+    return { vars: { eng, rid, sid: null, newSession: false, sessionCookie: null, ip, warnRule: null, signalled: false, scriptPath, waitUntil, facts, t0, ev } };
   }
 
   // Reads only `vars`, never the request: after Deno.upgradeWebSocket, `req.headers` throws.
@@ -384,11 +394,14 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       if (!ev) return;
       const path = ev.p as string;
       const cfg = eng.snap.config;
-      if ((cfg?.exclude || []).some((x) => path.startsWith(x))) return;
-      if (Math.random() >= (cfg?.sample ?? 1)) return;
+      if (!vars.signalled) {   // a signalled row ships whatever sample and exclude say, like the 403 row it replaces
+        if ((cfg?.exclude || []).some((x) => path.startsWith(x))) return;
+        if (Math.random() >= (cfg?.sample ?? 1)) return;
+      }
       ev.ts = vars.t0;   // the request start: the timeline draws [ts, ts + dur]
       ev.st = status;
       ev.dur = status === null ? null : Math.max(0, Date.now() - vars.t0);   // request start → response settled; unknown where the response is unseen
+      if (vars.signalled) ev.chs = 1;   // challenge signalled (contract §A3)
       if (vars.warnRule) ev.wrn = vars.warnRule;   // §D3: the warn rule that let this request through
       ship(eng, ev, vars.waitUntil);
     }, undefined);
