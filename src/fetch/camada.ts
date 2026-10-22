@@ -355,8 +355,9 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
         }
       }
 
-      // The beacon endpoints come after enforcement (a blocked or challenged client gets neither
-      // the script nor a relay) and before the app (they are camada's, not its). With the tenant's
+      // The beacon endpoints come after enforcement (a blocked client, or one served the challenge
+      // page, gets neither the script nor a relay; a challenged non-HTML client is only signalled
+      // and still reaches them) and before the app (they are camada's, not its). With the tenant's
       // beacon off they fall through to the app, which 404s them — @camada/node's order.
       if (beaconEnabled(eng)) {
         if (req.method === 'GET' && path === scriptPath) {
