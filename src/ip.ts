@@ -103,6 +103,27 @@ function inCidr(ip: string, cidr: Cidr4 | Cidr6): boolean {
   return true;
 }
 
+function parseCidrs(cidrs: string[]): (Cidr4 | Cidr6)[] {
+  return cidrs.map(parseCidr).filter((c): c is Cidr4 | Cidr6 => c !== null);
+}
+
+/** The first-hop rule shared by isTrustedPeer and the cidrs walk; `ip` is an already-validated peer. */
+function peerTrusted(ip: string, trusted: (Cidr4 | Cidr6)[]): boolean {
+  return isLoopback(ip) || trusted.some((t) => inCidr(ip, t));
+}
+
+/**
+ * True when `peer` is trusted as the first hop of the `cidrs` walk in resolveClientIp: loopback, or
+ * inside one of `cfg.cidrs` (unparseable entries are ignored). Loopback counts. No peer is NOT
+ * trusted here (unlike resolveClientIp's no-peer walk, which runs over XFF alone). `hops`, `vercel`,
+ * `none` and a missing config return false because those modes never look at the peer.
+ */
+export function isTrustedPeer(peer: string | null | undefined, cfg?: TrustedProxyConfig | null): boolean {
+  if (cfg?.mode !== 'cidrs' || !peer) return false;
+  const ip = unmap(peer);
+  return validIp(ip) && peerTrusted(ip, parseCidrs(cfg.cidrs));
+}
+
 /**
  * Resolves the client IP from the socket peer address and the X-Forwarded-For header per the
  * trusted-proxy config. The result is always a valid IP address or null (C6 v3), in every mode.
@@ -146,10 +167,10 @@ export function resolveClientIp(socketAddr: string | null | undefined, xff: stri
       candidate = entries[entries.length - 1];
       break;
     case 'cidrs': {
-      const trusted = cfg.cidrs.map(parseCidr).filter((c): c is Cidr4 | Cidr6 => c !== null);
+      const trusted = parseCidrs(cfg.cidrs);
       const isTrusted = (ip: string) => validIp(ip) && trusted.some((t) => inCidr(ip, t));
-      // the peer is the first hop; an unreadable (non-IP) peer never walks
-      if (mapped !== null && (sock === null || (!isLoopback(sock) && !isTrusted(sock)))) return sock;
+      // the peer is the first hop (isTrustedPeer); an unreadable (non-IP) peer never walks
+      if (mapped !== null && (sock === null || !peerTrusted(sock, trusted))) return sock;
       for (let i = entries.length - 1; i >= 0; i--) {
         if (!isTrusted(entries[i])) { candidate = entries[i]; break; }
       }
