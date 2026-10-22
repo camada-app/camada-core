@@ -250,7 +250,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     try { parsed = JSON.parse(body); } catch { return noContent(); }   // not a beacon: drop it, never ship junk
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return noContent();
     // Spread first: the ip and the tap are the server's to say, whatever the body claimed.
-    const row: Record<string, unknown> = { ...(parsed as Record<string, unknown>), sig: 1, ip, tap };
+    const row: Record<string, unknown> = { ...(parsed as Record<string, unknown>), sig: 1, ip, tap, rts: Date.now() };
     for (const k of REQUEST_ROW_KEYS) delete row[k];
     ship(eng, row, waitUntil);
     return noContent();
