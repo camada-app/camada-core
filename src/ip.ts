@@ -104,6 +104,19 @@ function inCidr(ip: string, cidr: Cidr4 | Cidr6): boolean {
 }
 
 /**
+ * True when `peer` is trusted as the first hop of the `cidrs` walk in resolveClientIp: loopback, or
+ * inside one of `cfg.cidrs` (unparseable entries are ignored). Loopback counts. No peer is NOT
+ * trusted here (unlike resolveClientIp's no-peer walk, which runs over XFF alone). `hops`, `vercel`,
+ * `none` and a missing config return false because those modes never look at the peer.
+ */
+export function isTrustedPeer(peer: string | null | undefined, cfg?: TrustedProxyConfig | null): boolean {
+  if (cfg?.mode !== 'cidrs' || !peer) return false;
+  const ip = unmap(peer);
+  if (!validIp(ip)) return false;
+  return isLoopback(ip) || cfg.cidrs.some((c) => { const p = parseCidr(c); return p !== null && inCidr(ip, p); });
+}
+
+/**
  * Resolves the client IP from the socket peer address and the X-Forwarded-For header per the
  * trusted-proxy config. The result is always a valid IP address or null (C6 v3), in every mode.
  *
@@ -149,7 +162,7 @@ export function resolveClientIp(socketAddr: string | null | undefined, xff: stri
       const trusted = cfg.cidrs.map(parseCidr).filter((c): c is Cidr4 | Cidr6 => c !== null);
       const isTrusted = (ip: string) => validIp(ip) && trusted.some((t) => inCidr(ip, t));
       // the peer is the first hop; an unreadable (non-IP) peer never walks
-      if (mapped !== null && (sock === null || (!isLoopback(sock) && !isTrusted(sock)))) return sock;
+      if (mapped !== null && !isTrustedPeer(socketAddr, cfg)) return sock;
       for (let i = entries.length - 1; i >= 0; i--) {
         if (!isTrusted(entries[i])) { candidate = entries[i]; break; }
       }
