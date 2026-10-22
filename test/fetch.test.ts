@@ -76,7 +76,7 @@ function app(opts: FetchCamadaOptions = {}, ids: FetchIdentity = { tap: TAP_BUN,
     if (pathname === '/checkout') return html('<p>checkout</p>');
     if (pathname === '/admin/users') return html('<p>admin</p>');
     if (pathname === '/healthz') return new Response('ok');
-    if (pathname === '/cc') return new Response('{}', { headers: { 'cache-control': 'public, max-age=300' } });
+    if (pathname === '/cc') return new Response('{}', { headers: { 'cache-control': 'public, max-age=300', 'cdn-cache-control': 'public, max-age=60', 'surrogate-control': 'max-age=60' } });
     if (pathname === '/stream') return new Response(slowBody(3, 40), { headers: { 'content-type': 'text/event-stream' } });   // ~120 ms of body after the handler returned
     if (pathname === '/plain-stream') return new Response(slowBody(3, 40));   // streamed, but nothing says so: ships at return
     if (pathname === '/page') return html(`<html><head>${scriptTag(vars)}</head><body>page</body></html>`);
@@ -549,6 +549,17 @@ describe('challenge', () => {
     const json = { headers: { accept: 'application/json' } };
     expect((await call(a, '/cc', json, ip(CHALLENGED_IP))).headers.get('cache-control')).toBe('no-store');
     expect((await call(a, '/cc', json)).headers.get('cache-control')).toBe('public, max-age=300');
+  });
+
+  it('forces no-store on every CDN cache header of a signalled response; an unsignalled one keeps the app\'s (camada-all-5pog)', async () => {
+    const a = await primed();
+    const json = { headers: { accept: 'application/json' } };
+    const sig = await call(a, '/cc', json, ip(CHALLENGED_IP));
+    for (const n of ['cache-control', 'cdn-cache-control', 'surrogate-control', 'cloudflare-cdn-cache-control', 'vercel-cdn-cache-control', 'netlify-cdn-cache-control']) expect(sig.headers.get(n), n).toBe('no-store');
+    const plain = await call(a, '/cc', json);
+    expect(plain.headers.get('cdn-cache-control')).toBe('public, max-age=60');
+    expect(plain.headers.get('surrogate-control')).toBe('max-age=60');
+    expect(plain.headers.get('vercel-cdn-cache-control')).toBeNull();
   });
 
   it('ships the signalled row at sample 0 and on an excluded path', async () => {
