@@ -76,6 +76,7 @@ function app(opts: FetchCamadaOptions = {}, ids: FetchIdentity = { tap: TAP_BUN,
     if (pathname === '/checkout') return html('<p>checkout</p>');
     if (pathname === '/admin/users') return html('<p>admin</p>');
     if (pathname === '/healthz') return new Response('ok');
+    if (pathname === '/cc') return new Response('{}', { headers: { 'cache-control': 'public, max-age=300' } });
     if (pathname === '/stream') return new Response(slowBody(3, 40), { headers: { 'content-type': 'text/event-stream' } });   // ~120 ms of body after the handler returned
     if (pathname === '/plain-stream') return new Response(slowBody(3, 40));   // streamed, but nothing says so: ships at return
     if (pathname === '/page') return html(`<html><head>${scriptTag(vars)}</head><body>page</body></html>`);
@@ -533,11 +534,72 @@ describe('challenge', () => {
     expect(res.headers.get('x-camada-challenge')).toBe('1');
   });
 
-  it('answers 403 JSON for a non-HTML challenge', async () => {
+  it('passes a non-HTML request under a challenge, signalled: header, x-rid, chs: 1 (82ar)', async () => {
     const a = await primed();
     const res = await call(a, '/checkout', { headers: { accept: 'application/json' } });
-    expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: 'challenge_required' });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-camada-challenge')).toBe('1');
+    expect(res.headers.get('x-rid')).toBe(a.lastVars!.rid);
+    expect(events.find((e) => e.p === '/checkout')).toMatchObject({ st: 200, chs: 1, rid: a.lastVars!.rid });
+    expect(events.some((e) => e.blk)).toBe(false);
+  });
+
+  it('forces no-store on a signalled response, over the app\'s; an unsignalled one keeps its own (82ar)', async () => {
+    const a = await primed();
+    const json = { headers: { accept: 'application/json' } };
+    expect((await call(a, '/cc', json, ip(CHALLENGED_IP))).headers.get('cache-control')).toBe('no-store');
+    expect((await call(a, '/cc', json)).headers.get('cache-control')).toBe('public, max-age=300');
+  });
+
+  it('ships the signalled row at sample 0 and on an excluded path', async () => {
+    CONFIG = { ...BASE_CONFIG, sample: 0, exclude: ['/checkout'] };
+    const a = await primed();
+    await call(a, '/checkout', { headers: { accept: 'application/json' } });
+    expect(events.filter((e) => e.p === '/checkout')).toHaveLength(1);
+    expect(events.find((e) => e.p === '/checkout')).toMatchObject({ st: 200, chs: 1 });
+    events.length = 0;
+    await call(a, '/', { headers: { accept: 'application/json' } });   // not challenged: sampled out as ever
+    expect(events).toHaveLength(0);
+  });
+
+  it('still serves the page to an HTML request, and a navigation data request gets 403 JSON', async () => {
+    const a = await primed();
+    const page = await call(a, '/checkout', { headers: HTML });
+    expect(page.status).toBe(403);
+    expect(await page.text()).toContain('<form');
+    expect(events.at(-1)).toMatchObject({ st: 403, blk: 'challenge' });
+    expect(events.at(-1)!.chs).toBeUndefined();
+    events.length = 0;
+    const nav = await call(a, '/checkout', { headers: { accept: 'application/json' } }, ip('8.8.8.8', { navigation: true }));
+    expect(nav.status).toBe(403);
+    expect(nav.headers.get('x-camada-challenge')).toBe('1');
+    expect(await nav.json()).toEqual({ error: 'challenge_required' });
+    expect(events.at(-1)).toMatchObject({ st: 403, blk: 'challenge' });
+  });
+
+  it('signals nothing with a valid _cch, challenge: false, or no ip', async () => {
+    const a = await primed();
+    const page = await call(a, '/cart', { headers: HTML }, ip(CHALLENGED_IP));
+    const nonce = nonceOf(await page.text());
+    const ok = await postSolution(a, CHALLENGED_IP, `nonce=${nonce}&solution=${solve(nonce)}&to=%2Fcart`);
+    const cookie = ok.headers.get('set-cookie')!.split(';')[0];
+    events.length = 0;
+    const res = await call(a, '/cart', { headers: { cookie, accept: 'application/json' } }, ip(CHALLENGED_IP));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-camada-challenge')).toBeNull();
+    expect(events.some((e) => e.chs)).toBe(false);
+    const b = await primed({ challenge: false });
+    expect((await call(b, '/checkout', { headers: { accept: 'application/json' } })).headers.get('x-camada-challenge')).toBeNull();
+    const none = await call(a, '/checkout', { headers: { accept: 'application/json' } }, {});
+    expect(none.headers.get('x-camada-challenge')).toBeNull();
+  });
+
+  it('serves the beacon script to a challenged non-HTML client, unsignalled', async () => {
+    const a = await primed();
+    const res = await call(a, '/_cam/b.js', { headers: { accept: '*/*', 'sec-fetch-dest': 'script' } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(IIFE);
+    expect(res.headers.get('x-camada-challenge')).toBeNull();
   });
 
   it('refuses an oversized verify body instead of buffering it', async () => {
