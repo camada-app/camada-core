@@ -201,7 +201,7 @@ describe('1oqz: per-request regex work budget', () => {
     const rules = many(200, 'ua', P46);
     const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules }));
     const first = m.match({ ip: '8.8.8.8', path: '/', ua } as never).rule;   // the cold request
-    expect(first).toBe(rules[31].id);   // the budget engaged (deterministic: seeded UA, charges are counts): rules 0-30 run and miss, rule 31 finds it spent and hits
+    expect(first).toBe(rules[30].id);   // the budget engaged (deterministic: seeded UA, charges are counts): rules 0-29 run and miss, rule 30 finds it spent and hits
     const ms = best(() => m.match({ ip: '8.8.8.8', path: '/', ua } as never));
     expect(ms).toBeLessThan(500);
   }, 60_000);

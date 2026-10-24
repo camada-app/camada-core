@@ -149,8 +149,8 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
     d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM;
     d.clearCache = function (this: typeof d) { dfaBuilt += this.stateBudget - this.memBudget; return clear.call(this); };   // the bytes of cache built before a clear (this.memBudget is what is left), for safeTest
     d.match = function (this: typeof d, ...a: Parameters<typeof d.match>) { const r = match.apply(this, a); if (r === null) dfaGiveUps++; return r; };   // null: the DFA gave up and the NFA runs the whole input
-    // a transition-table miss whose target state is already cached builds no bytes but scanned the source state and closed over the target, so it is charged both sizes (anchor 0 is RE2Flags.UNANCHORED)
-    d.step = function (this: typeof d, s: Parameters<typeof d.step>[0], cls: number, rune: number, anchor: number) { const t = anchor === 0 ? s.next : s.nextAnchored, miss = t == null || t[cls] == null, c0 = this.stateCount, r = step.call(this, s, cls, rune, anchor); if (miss && this.stateCount === c0) dfaSteps += (s.nfaStates?.length ?? 0) + (r?.nfaStates?.length ?? 0) + REGEX_STEP_WORK; return r; };
+    // every transition computed (a table miss) scanned its source state, so it is charged the source's NFA-state count; one whose target was already cached (no new bytes) also closed over the target, so it is charged the target's count + REGEX_STEP_WORK (anchor 0 is RE2Flags.UNANCHORED)
+    d.step = function (this: typeof d, s: Parameters<typeof d.step>[0], cls: number, rune: number, anchor: number) { const t = anchor === 0 ? s.next : s.nextAnchored, miss = t == null || t[cls] == null, c0 = this.stateCount, r = step.call(this, s, cls, rune, anchor); if (miss) dfaSteps += (s.nfaStates?.length ?? 0) + (this.stateCount === c0 ? (r?.nfaStates?.length ?? 0) + REGEX_STEP_WORK : 0); return r; };
     WORK.set(re, { n, d });
     return re;
   }
@@ -163,7 +163,7 @@ export const REQUEST_REGEX_WORK = 8388608;
 /** The fixed cost of one call, added to a program's instruction count for the give-up charge. */
 export const REGEX_STATE_WORK = 64;
 let regexLeft = Infinity;   // Infinity outside a request rule walk (entity plane, direct .test): unbudgeted
-/** The fixed cost of one DFA transition computed to an already-cached state, added to the source and target states' NFA-state counts. */
+/** The fixed cost of one DFA transition computed to an already-cached state (no new bytes), added to its target state's NFA-state count; every transition computed is charged its source state's NFA-state count. */
 export const REGEX_STEP_WORK = 256;
 let dfaBuilt = 0, dfaGiveUps = 0, dfaSteps = 0;
 const WORK = new WeakMap<object, { n: number; d: { memBudget: number } | null; full?: true }>();   // full: re2js internals missing, charge the worst case every test
@@ -178,7 +178,7 @@ export function withRegexBudget<T>(f: () => T): T {
 /** re.test, except that a match-time engine failure (a RangeError) answers `onError`, like an over-cap value: deny for block/challenge/warn, miss for skip (contract regex-cap-sdk S4).
  *  Inside withRegexBudget a test runs while budget is left (regexLeft > 0), else it answers `onError` unrun. It is charged the full worst case (L+1)(n+64) when re2js's DFA
  *  gave up (the NFA then ran the whole input), else L+64 plus the DFA cache bytes built during the test (re2js's own per-state accounting, memBudget) plus, per DFA transition
- *  computed to an already-cached state (no bytes, real CPU), the source and target states' NFA-state counts + REGEX_STEP_WORK. The native fallback is charged L+64; if the re2js internals wrapped
+ *  computed (real CPU), its source state's NFA-state count, and for one whose target was already cached (no new bytes) also its target's count + REGEX_STEP_WORK. The native fallback is charged L+64; if the re2js internals wrapped
  *  in compileMatches are missing, every test is charged the full worst case. */
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
   if (regexLeft <= 0) return onError;
