@@ -86,6 +86,7 @@ export const pathHit = (pred: (p: string, deny: boolean) => boolean, forms: Path
   deny ? pred(forms[0], true) || pred(forms[1], true) || pred(forms[2], true) : pred(forms[1], false) && pred(forms[2], false);
 
 const WS = '\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}';   // JS \s
+const SURR = /^[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}/;
 const HEX4 = /^[0-9a-fA-F]{4}/;
 const HEX2 = /^[0-9a-fA-F]{2}/;
 
@@ -93,21 +94,30 @@ const HEX2 = /^[0-9a-fA-F]{2}/;
  *  test vectors' `translate` rows pin the output; edge-analyst blocklist.js carries the same function. */
 export function jsToRe2(p: string): string {
   let out = '', cls = false;
+  let ce = 0;
   for (let i = 0; i < p.length; i++) {
-    const c = p[i];
+    const c = p[i], prev = ce;
+    ce = prev === 2 ? 1 : 0;
     if (c === '\\' && i + 1 < p.length) {
       const n = p[++i];
-      if ('AzQEpPa'.includes(n)) out += n;                                   // JS reads the bare letter; RE2 an anchor, quote or class
+      if (cls && 'sSdDwW'.includes(n)) ce = 1;   // a class escape: a '-' next to it is a literal '-'
+      if ('AzQEpPa'.includes(n) || (n === 'B' && cls)) out += n;   // JS reads the bare letter (RE2: an anchor, quote or class); [\B] is a literal B
+      else if (n === 'u' && !cls && SURR.test(p.slice(i + 1, i + 11))) {        // \uD83D\uDE00: how a non-u regex writes an astral character
+        out += '\\x{' + ((parseInt(p.substr(i + 1, 4), 16) - 0xd800) * 0x400 + parseInt(p.substr(i + 7, 4), 16) - 0xdc00 + 0x10000).toString(16) + '}';
+        i += 10;
+      }
       else if (n === 'u') out += HEX4.test(p.slice(i + 1, i + 5)) ? '\\u' : 'u';
       else if (n === 'x') out += HEX2.test(p.slice(i + 1, i + 3)) ? '\\x' : 'x';
+      else if (n === 'c' && cls && /[0-9_]/.test(p[i + 1] ?? '')) out += '\\x' + (p.charCodeAt(++i) % 32).toString(16).padStart(2, '0');   // [\c_] is a control character in a class (Annex B)
       else if (n === 'c') out += /[A-Za-z]/.test(p[i + 1] || '') ? '\\c' : '\\\\c';
       else if (n === 'b' && cls) out += '\\x08';
       else if (n === 's') out += cls ? WS : '[' + WS + ']';
       else if (n === 'S' && !cls) out += '[^' + WS + ']';
       else out += c + n;
     } else if (cls) {
-      if (c === ']') cls = false;
-      out += c;
+      if (c === ']') { cls = false; ce = 0; }
+      if (c === '-' && (prev || /^\\[sSdDwW]/.test(p.slice(i + 1, i + 3)))) { out += '\\-'; if (prev === 1) ce = 2; }   // a literal - (and the atom after it is plain too)
+      else out += c;
     } else if (c === '[') {
       out += c;
       if (p[i + 1] === '^') out += p[++i];
