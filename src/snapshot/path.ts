@@ -83,7 +83,7 @@ export const MAX_MATCH_INPUT = 2048;
 /** Does `pred` hold for this request? deny = any spelling; an exemption = both canonical forms. `deny` also tells a
  *  `matches` predicate what an over-cap form answers. */
 export const pathHit = (pred: (p: string, deny: boolean) => boolean, forms: PathForms, deny: boolean): boolean =>
-  // a spelling equal to one already tried is skipped (pred is pure): with the DFA bounded a failing wide match costs ~27 ms every time, so three identical forms would triple it
+  // a spelling equal to one already tried is skipped: a test spends the request's regex budget, so skipping a repeat is also what keeps edge and core spending the same; keep the forms' order and skips identical in both
   deny ? pred(forms[0], true) || (forms[1] !== forms[0] && pred(forms[1], true)) || (forms[2] !== forms[0] && forms[2] !== forms[1] && pred(forms[2], true))
     : pred(forms[1], false) && (forms[2] === forms[1] || pred(forms[2], false));
 
@@ -141,9 +141,10 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
   let re: RE2JS | undefined;
   try { re = RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { /* fall through */ }
   if (re) {   // outside the try: a failure here must throw, not fall back to native
-    const d = re.re2().dfa, clear = d.clearCache;
+    const d = re.re2().dfa, clear = d.clearCache, match = d.match;
     d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM;
-    d.clearCache = function (this: typeof d) { dfaClears++; return clear.call(this); };   // counts the cache clears safeTest charges for
+    d.clearCache = function (this: typeof d) { dfaBuilt += this.stateCount; return clear.call(this); };   // states built before a clear, for safeTest
+    d.match = function (this: typeof d, ...a: Parameters<typeof d.match>) { const r = match.apply(this, a); if (r === null) dfaGiveUps++; return r; };   // null: the DFA gave up and the NFA runs the whole input
     WORK.set(re, { n: re.re2().numberOfInstructions() + REGEX_STATE_WORK, d });
     return re;
   }
@@ -151,12 +152,12 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
 }
 
 /** Per-request regex work (camada-all-1oqz), mirrors edge-analyst blocklist.js: a test of a value of length L through n instructions
- *  reserves (L+1)(n+64) of REQUEST_REGEX_WORK; one that does not fit does not run and answers like over-cap. */
-export const REQUEST_REGEX_WORK = 4194304;
+ *  runs while any of REQUEST_REGEX_WORK is left, so a walk spends at most that plus one test. */
+export const REQUEST_REGEX_WORK = 8388608;
 /** The fixed cost of one call or one new DFA state. */
 export const REGEX_STATE_WORK = 64;
 let regexLeft = Infinity;   // Infinity outside a request rule walk (entity plane, direct .test): unbudgeted
-let dfaClears = 0;
+let dfaBuilt = 0, dfaGiveUps = 0;
 const WORK = new WeakMap<object, { n: number; d: { stateCount: number } | null }>();
 
 /** Runs a request rule walk (synchronous: the budget is module state) under a fresh REQUEST_REGEX_WORK; nesting-safe. */
@@ -167,15 +168,14 @@ export function withRegexBudget<T>(f: () => T): T {
 }
 
 /** re.test, except that a match-time engine failure (a RangeError) answers `onError`, like an over-cap value: deny for block/challenge/warn, miss for skip (contract regex-cap-sdk S4).
- *  Inside withRegexBudget it first reserves the worst case (L+1)(n+64); a test that does not fit answers `onError` unrun. It then charges that when the DFA cleared its cache
- *  (every NFA give-up clears first), else L+64 plus n+64 per new DFA state. The native fallback is charged L+64 and never refused. */
+ *  Inside withRegexBudget a test runs while budget is left (regexLeft > 0), else it answers `onError` unrun. It is charged the full worst case (L+1)(n+64) when re2js's DFA
+ *  gave up (the NFA then ran the whole input), else L+64 plus n+64 per DFA state built during the test. The native fallback is charged L+64. */
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
-  const w = WORK.get(re), worst = w?.d ? (v.length + 1) * w.n : 0;
-  if (worst > regexLeft) return onError;
-  const c0 = dfaClears, s0 = w?.d?.stateCount ?? 0;
+  if (regexLeft <= 0) return onError;
+  const w = WORK.get(re), g0 = dfaGiveUps, b0 = dfaBuilt, s0 = w?.d?.stateCount ?? 0;
   let hit: boolean;
   try { hit = re.test(v); } catch { hit = onError; }
-  if (w) regexLeft -= !w.d ? v.length + REGEX_STATE_WORK : dfaClears !== c0 ? worst : v.length + REGEX_STATE_WORK + w.n * Math.max(0, w.d.stateCount - s0);
+  if (w) regexLeft -= !w.d ? v.length + REGEX_STATE_WORK : dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + w.n * (dfaBuilt - b0 + w.d.stateCount - s0);   // a clear already added its old stateCount to dfaBuilt
   return hit;
 }
 
