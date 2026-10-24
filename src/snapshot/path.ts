@@ -140,8 +140,44 @@ export const RE2_DFA_MAX_MEM = 65536;
 export function compileMatches(p: string, ci: boolean): { test(s: string): boolean } | null {
   let re: RE2JS | undefined;
   try { re = RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { /* fall through */ }
-  if (re) { const d = re.re2().dfa; d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM; return re; }   // outside the try: a failure here must throw, not fall back to native
-  try { return new RegExp(p, ci ? 'i' : ''); } catch { return null; }
+  if (re) {   // outside the try: a failure here must throw, not fall back to native
+    const d = re.re2().dfa; d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM;
+    WORK.set(re, { n: re.re2().numberOfInstructions() + REGEX_STATE_WORK, d });
+    const clear = d.clearCache;
+    d.clearCache = function (this: typeof d) { dfaClears++; return clear.call(this); };   // a clear in a test is charged in full (safeTest)
+    return re;
+  }
+  try { const nre = new RegExp(p, ci ? 'i' : ''); WORK.set(nre, { n: REGEX_STATE_WORK, d: null }); return nre; } catch { return null; }
+}
+
+/** Per-request regex work (camada-all-1oqz), mirrors edge-analyst blocklist.js: a test of a value of length L through n instructions
+ *  reserves (L+1)(n+64) of REQUEST_REGEX_WORK; one that does not fit does not run and answers like over-cap. */
+export const REQUEST_REGEX_WORK = 4194304;
+/** The fixed cost of one call or one new DFA state. */
+export const REGEX_STATE_WORK = 64;
+let regexLeft = Infinity;   // Infinity outside a request rule walk (entity plane, direct .test): unbudgeted
+let dfaClears = 0;
+const WORK = new WeakMap<object, { n: number; d: { stateCount: number } | null }>();
+
+/** Runs a request rule walk (synchronous: the budget is module state) under a fresh REQUEST_REGEX_WORK; nesting-safe. */
+export function withRegexBudget<T>(f: () => T): T {
+  const prev = regexLeft;
+  regexLeft = REQUEST_REGEX_WORK;
+  try { return f(); } finally { regexLeft = prev; }
+}
+
+/** `re.test(v)` under the request budget; an unaffordable test or a match-time failure (S4) answers `onError`. */
+export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
+  const w = WORK.get(re);
+  if (!w) { try { return re.test(v); } catch { return onError; } }
+  const worst = (v.length + 1) * w.n;
+  if (worst > regexLeft) return onError;
+  const c0 = dfaClears, s0 = w.d ? w.d.stateCount : 0;
+  let hit: boolean;
+  try { hit = re.test(v); } catch { hit = onError; }
+  // full W when the DFA cleared its cache (every NFA give-up clears first), else the length plus new states
+  regexLeft -= w.d === null ? v.length + REGEX_STATE_WORK : dfaClears !== c0 ? worst : v.length + REGEX_STATE_WORK + w.n * Math.max(0, w.d.stateCount - s0);
+  return hit;
 }
 
 /** One v5 path condition -> a predicate over a single path form. A regex this runtime rejects never matches. */
@@ -151,7 +187,7 @@ export function pathPred(op: string, values: string[]): (p: string, deny: boolea
     return (p, deny) => {
       if (!re) return false;
       if (p.length > MAX_MATCH_INPUT) return deny;
-      try { return re.test(p); } catch { return deny; }   // S4: a match-time failure answers like over-cap
+      return safeTest(re, p, deny);   // S4: a match-time failure answers like over-cap
     };
   }
   if (op === 'starts_with') {
