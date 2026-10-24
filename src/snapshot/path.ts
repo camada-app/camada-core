@@ -83,7 +83,9 @@ export const MAX_MATCH_INPUT = 2048;
 /** Does `pred` hold for this request? deny = any spelling; an exemption = both canonical forms. `deny` also tells a
  *  `matches` predicate what an over-cap form answers. */
 export const pathHit = (pred: (p: string, deny: boolean) => boolean, forms: PathForms, deny: boolean): boolean =>
-  deny ? pred(forms[0], true) || pred(forms[1], true) || pred(forms[2], true) : pred(forms[1], false) && pred(forms[2], false);
+  // a spelling equal to one already tried is skipped (pred is pure): with the DFA bounded a failing wide match costs ~27 ms every time, so three identical forms would triple it
+  deny ? pred(forms[0], true) || (forms[1] !== forms[0] && pred(forms[1], true)) || (forms[2] !== forms[0] && forms[2] !== forms[1] && pred(forms[2], true))
+    : pred(forms[1], false) && (forms[2] === forms[1] || pred(forms[2], false));
 
 const WS = '\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}';   // JS \s
 const SURR = /^[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}/;
@@ -92,8 +94,9 @@ const HEX2 = /^[0-9a-fA-F]{2}/;
 
 /** A JS (non-`u`) pattern -> RE2 syntax that keeps the JS meaning, via re2js' translateRegExp (contract regex-limit v1). The
  *  test vectors' `translate` rows pin the output; edge-analyst blocklist.js carries the same function. */
+const BRACE = /\{(\d+)(?:,(\d*))?\}/y;
 export function jsToRe2(p: string): string {
-  let out = '', cls = false, ce = false, at = false;
+  let out = '', cls = false, ce = false, at = false, m: RegExpExecArray | null;
   for (let i = 0; i < p.length; i++) {
     const c = p[i];
     if (c === '\\' && i + 1 < p.length) {
@@ -119,7 +122,8 @@ export function jsToRe2(p: string): string {
         ce = false; at = true;
       }
       out += c;
-    } else if (c === '[') {
+    } else if (c === '{' && (BRACE.lastIndex = i, m = BRACE.exec(p))) { out += m[0].replace(/\d+/g, (d) => d.replace(/^0+(?=\d)/, '')); i += m[0].length - 1; }   // a{02} is a{2} in JS but RE2 reads the text: strip leading zeros as text (never Number()), skip the brace
+    else if (c === '[') {
       out += c;
       if (p[i + 1] === '^') out += p[++i];
       cls = true; ce = at = false;
@@ -128,10 +132,14 @@ export function jsToRe2(p: string): string {
   return RE2JS.translateRegExp(out);
 }
 
+/** re2js' lazy DFA caches up to 8 MiB per pattern (200 wide rules held 1147 MiB); 64 KiB gives the same answers (a full cache is rebuilt or the NFA runs). */
+export const RE2_DFA_MAX_MEM = 65536;
 /** A customer `matches` pattern as a linear-time matcher; a stored pattern re2js refuses (a legacy lookaround) falls back to
  *  the native RegExp, null when neither compiles. */
 export function compileMatches(p: string, ci: boolean): { test(s: string): boolean } | null {
-  try { return RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { /* fall through */ }
+  let re: RE2JS | undefined;
+  try { re = RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { /* fall through */ }
+  if (re) { const d = re.re2().dfa; d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM; return re; }   // outside the try: a failure here must throw, not fall back to native
   try { return new RegExp(p, ci ? 'i' : ''); } catch { return null; }
 }
 
