@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
-import { compileMatches, jsToRe2, MAX_MATCH_INPUT, REGEX_STATE_WORK, REQUEST_REGEX_WORK, safeTest, withRegexBudget } from '../src/snapshot/path.js';
+import { compileMatches, jsToRe2, MAX_MATCH_INPUT, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
 const REGEX_LIMIT_VECTORS_SHA256 = '9a953df1c928148a7cb5b9ab421d409945f05f27d92e147aac742bc7b4f0a987';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
@@ -106,6 +106,7 @@ describe('1oqz: per-request regex work budget', () => {
   it('REQUEST_REGEX_WORK is 8388608 and a call costs 64', () => {
     expect(REQUEST_REGEX_WORK).toBe(8388608);
     expect(REGEX_STATE_WORK).toBe(64);
+    expect(REGEX_STEP_WORK).toBe(256);
   });
 
   it('a test runs while budget is left, so a walk spends at most the budget plus one test', () => {
@@ -170,10 +171,11 @@ describe('1oqz: per-request regex work budget', () => {
     for (let i = 0; i < 3; i++) expect(m.match({ ip: '8.8.8.8', ...input } as never).rule).toBeUndefined();
   }, 60_000);
 
-  it('the give-up counter is wired', () => {
+  it('the give-up counter and the re2js DFA wraps are wired', () => {
     const re = compileMatches(LT1, true) as RE2JS, d = re.re2().dfa;
     expect(Object.hasOwn(d, 'clearCache')).toBe(true);
     expect(Object.hasOwn(d, 'match')).toBe(true);
+    expect(Object.hasOwn(d, 'step')).toBe(true);   // CI tripwire for an re2js upgrade: if the DFA internals move, the wraps (and the budget) silently stop charging
     // LT1 on H1 gives up (counted): four tests are charged the full ~2.57 M each, so a fifth finds nothing left
     const three = Array.from({ length: 5 }, () => compileMatches(LT1, true)!);
     expect(withRegexBudget(() => three.map((r) => safeTest(r, H1, true)))).toEqual([false, false, false, false, true]);
@@ -189,6 +191,19 @@ describe('1oqz: per-request regex work budget', () => {
     const ms = best(() => { rule = m.match({ ip: '8.8.8.8', path: H3 }).rule; });
     expect(rule).toBe(rules[1].id);
     expect(ms).toBeLessThan(500);   // bounded vs ~16 s unbounded; loose for slow CI runners
+  }, 60_000);
+
+  it('200 rules of a 46-branch `$` pattern on a 2 KiB user agent: DFA transitions to cached states are charged', () => {
+    const P46 = '(?:' + 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.slice(0, 46).split('').map((c) => c + '$').join('|') + ')';
+    const L46 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.slice(0, 46);
+    let seed = 7;
+    const ua = Array.from({ length: 2047 }, () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return L46[seed % 46]; }).join('') + '-';
+    const rules = many(200, 'ua', P46);
+    const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules }));
+    const first = m.match({ ip: '8.8.8.8', path: '/', ua } as never).rule;   // the cold request
+    expect(first).toBe(rules[37].id);   // the budget engaged (deterministic: seeded UA, charges are counts): rules 0-36 run and miss, rule 37 finds it spent and hits
+    const ms = best(() => m.match({ ip: '8.8.8.8', path: '/', ua } as never));
+    expect(ms).toBeLessThan(500);
   }, 60_000);
 
   it('the worst shape found stays under the stated bound', () => {
