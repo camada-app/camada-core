@@ -175,7 +175,7 @@ describe('1oqz: per-request regex work budget', () => {
     const re = compileMatches(LT1, true) as RE2JS, d = re.re2().dfa;
     expect(Object.hasOwn(d, 'clearCache')).toBe(true);
     expect(Object.hasOwn(d, 'match')).toBe(true);
-    expect(Object.hasOwn(d, 'step')).toBe(true);   // CI tripwire for an re2js upgrade: if the DFA internals move, the wraps (and the budget) silently stop charging
+    expect(Object.hasOwn(d, 'makeState')).toBe(true);   // CI tripwire for an re2js upgrade: without the internals the budget fails closed (every test charged the worst case); the 46-branch test below catches a wrap that stops being called
     // LT1 on H1 gives up (counted): four tests are charged the full ~2.57 M each, so a fifth finds nothing left
     const three = Array.from({ length: 5 }, () => compileMatches(LT1, true)!);
     expect(withRegexBudget(() => three.map((r) => safeTest(r, H1, true)))).toEqual([false, false, false, false, true]);
@@ -194,8 +194,8 @@ describe('1oqz: per-request regex work budget', () => {
   }, 60_000);
 
   it('200 rules of a 46-branch `$` pattern on a 2 KiB user agent: DFA transitions to cached states are charged', () => {
-    const P46 = '(?:' + 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.slice(0, 46).split('').map((c) => c + '$').join('|') + ')';
-    const L46 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.slice(0, 46);
+    const L46 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST';
+    const P46 = '(?:' + [...L46].map((c) => c + '$').join('|') + ')';
     let seed = 7;
     const ua = Array.from({ length: 2047 }, () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return L46[seed % 46]; }).join('') + '-';
     const rules = many(200, 'ua', P46);
