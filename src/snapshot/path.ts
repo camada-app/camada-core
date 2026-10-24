@@ -94,7 +94,7 @@ const HEX2 = /^[0-9a-fA-F]{2}/;
 
 /** A JS (non-`u`) pattern -> RE2 syntax that keeps the JS meaning, via re2js' translateRegExp (contract regex-limit v1). The
  *  test vectors' `translate` rows pin the output; edge-analyst blocklist.js carries the same function. */
-const BRACE = /\{(\d+)(?:,(\d*))?\}/y;
+const BRACE = /\{(\d+)(,(\d*))?\}/y;
 export function jsToRe2(p: string): string {
   let out = '', cls = false, ce = false, at = false, m: RegExpExecArray | null;
   for (let i = 0; i < p.length; i++) {
@@ -122,7 +122,7 @@ export function jsToRe2(p: string): string {
         ce = false; at = true;
       }
       out += c;
-    } else if (c === '{' && (BRACE.lastIndex = i, m = BRACE.exec(p))) { out += m[0].replace(/\d+/g, (d) => d.replace(/^0+(?=\d)/, '')); i += m[0].length - 1; }   // a{02} is a{2} in JS but RE2 reads the text: strip leading zeros as text (never Number()), skip the brace
+    } else if (c === '{' && (BRACE.lastIndex = i, m = BRACE.exec(p))) { out += m[0].replace(/\b0+(?=\d)/g, ''); i += m[0].length - 1; }   // a{02} is a{2} in JS but RE2 reads the text: strip leading zeros as text (never Number()), skip the brace
     else if (c === '[') {
       out += c;
       if (p[i + 1] === '^') out += p[++i];
