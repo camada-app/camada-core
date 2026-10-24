@@ -175,7 +175,7 @@ describe('1oqz: per-request regex work budget', () => {
     const re = compileMatches(LT1, true) as RE2JS, d = re.re2().dfa;
     expect(Object.hasOwn(d, 'clearCache')).toBe(true);
     expect(Object.hasOwn(d, 'match')).toBe(true);
-    expect(Object.hasOwn(d, 'makeState')).toBe(true);   // CI tripwire for an re2js upgrade: without the internals the budget fails closed (every test charged the worst case); the 46-branch test below catches a wrap that stops being called
+    expect(Object.hasOwn(d, 'step')).toBe(true);   // CI tripwire for an re2js upgrade: without the internals the budget fails closed (every test charged the worst case); the 46-branch test below catches a wrap that stops being called
     // LT1 on H1 gives up (counted): four tests are charged the full ~2.57 M each, so a fifth finds nothing left
     const three = Array.from({ length: 5 }, () => compileMatches(LT1, true)!);
     expect(withRegexBudget(() => three.map((r) => safeTest(r, H1, true)))).toEqual([false, false, false, false, true]);
@@ -201,7 +201,7 @@ describe('1oqz: per-request regex work budget', () => {
     const rules = many(200, 'ua', P46);
     const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules }));
     const first = m.match({ ip: '8.8.8.8', path: '/', ua } as never).rule;   // the cold request
-    expect(first).toBe(rules[37].id);   // the budget engaged (deterministic: seeded UA, charges are counts): rules 0-36 run and miss, rule 37 finds it spent and hits
+    expect(first).toBe(rules[31].id);   // the budget engaged (deterministic: seeded UA, charges are counts): rules 0-30 run and miss, rule 31 finds it spent and hits
     const ms = best(() => m.match({ ip: '8.8.8.8', path: '/', ua } as never));
     expect(ms).toBeLessThan(500);
   }, 60_000);
