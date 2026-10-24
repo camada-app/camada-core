@@ -1,6 +1,8 @@
 // mx0h/sl00 (camada-all-mx0h, camada-all-sl00): leading-zero counts and the per-pattern DFA bound, in path.ts.
 import { describe, it, expect } from 'vitest';
 import { RE2JS } from 're2js';
+import v8 from 'node:v8';
+import vm from 'node:vm';
 import { jsToRe2, compileMatches, RE2_DFA_MAX_MEM } from '../src/snapshot/path.js';
 
 const MiB = 1048576;
@@ -48,6 +50,25 @@ describe('sl00: re2js lazy-DFA cache is bounded at 64 KiB per pattern', () => {
     console.log(`sl00 accounted DFA bytes for 200 rules: ${sum} (${(sum / MiB).toFixed(2)} MiB)`);
     expect(sum).toBeLessThanOrEqual(12.5 * MiB);
   }, 60_000);
+  it('sl00: 200 wide rules retain at most 48 MiB of heap (8 MiB default: ~1147 MiB)', () => {
+    v8.setFlagsFromString('--expose_gc');
+    const gc = vm.runInNewContext('gc') as () => void;
+    expect(typeof gc).toBe('function');
+    const input = '/' + 'a'.repeat(2047);
+    gc();
+    const h0 = process.memoryUsage().heapUsed;
+    const keep: Array<{ test(s: string): boolean }> = [];
+    for (let k = 0; k < 200; k++) {
+      const re = compileMatches(LT1, true)!;
+      expect(re.test(input)).toBe(false);
+      keep.push(re);
+    }
+    gc();
+    // measured ~30 MiB capped (~17 MiB is the compiled programs alone); the default 8 MiB cache measured ~5.5 MiB per tested rule (~1100 MiB for 200)
+    const grew = process.memoryUsage().heapUsed - h0;
+    console.log(`sl00 retained heap for ${keep.length} rules: ${(grew / MiB).toFixed(2)} MiB`);
+    expect(grew).toBeLessThanOrEqual(48 * MiB);
+  }, 120_000);
   it('a bounded engine answers like the default one (LT1, an API prefix, a[ab]{20}x; 50 seeded inputs)', () => {
     let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
     const pick = (alpha: string, n: number) => Array.from({ length: n }, () => alpha[Math.floor(rnd() * alpha.length)]).join('');
