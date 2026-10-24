@@ -7,7 +7,7 @@ import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
 import { compileMatches, jsToRe2, MAX_MATCH_INPUT } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = '26a8c7bdac744186870cc41ed37f2a9c1673320d84bad403c2b1ee95fba92619';
+const REGEX_LIMIT_VECTORS_SHA256 = '86c40d2dc40d5ff736bd50a2f46d15657636f44205ca56a0cf24fcfa2a9c91fe';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
