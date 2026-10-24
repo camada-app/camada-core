@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Customer `matches` rules (path, user agent, header) run on re2js, a linear-time engine, so a pathological pattern costs bounded time instead of seconds. A stored pattern re2js refuses (a lookaround) keeps running on the native `RegExp`. `re2js` is the first runtime dependency (camada-all-2pap).
 - Beacon rows relayed from `/_cam/fp` carry `rts`, the SDK host's receipt time (`Date.now()`, set after the body spread so a browser cannot forge it). The analyst uses it in place of the browser clock for `/e` beacons, so a beacon alone in a batch still joins its request (camada-all-wd3b).
 
 - A signalled response (`x-camada-challenge: 1`) now also sets `cdn-cache-control`,
