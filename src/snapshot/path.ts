@@ -111,7 +111,7 @@ export function jsToRe2(p: string): string {
     } else if (c === '[') {
       out += c;
       if (p[i + 1] === '^') out += p[++i];
-      if (p[i + 1] === ']') out += p[++i]; else cls = true;                   // [] and [^] are whole classes in JS
+      cls = true;
     } else out += c === '.' ? '[^\\n\\r\\x{2028}\\x{2029}]' : c;
   }
   return RE2JS.translateRegExp(out);
