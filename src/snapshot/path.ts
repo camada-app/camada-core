@@ -122,12 +122,13 @@ export function jsToRe2(p: string): string {
         ce = false; at = true;
       }
       out += c;
-    } else if (c === '{' && (BRACE.lastIndex = i, m = BRACE.exec(p))) { out += m[0].replace(/\b0+(?=\d)/g, ''); i += m[0].length - 1; }   // a{02} is a{2} in JS but RE2 reads the text: strip leading zeros as text (never Number()), skip the brace
-    else if (c === '[') {
+    } else if (c === '[') {
       out += c;
       if (p[i + 1] === '^') out += p[++i];
       cls = true; ce = at = false;
-    } else out += c === '.' ? '[^\\n\\r\\x{2028}\\x{2029}]' : c;
+    }
+    else if (c === '{' && (BRACE.lastIndex = i, m = BRACE.exec(p))) { out += m[0].replace(/\b0+(?=\d)/g, ''); i += m[0].length - 1; }   // a{02} is a{2} in JS but RE2 reads the text: strip leading zeros as text (never Number()), skip the brace
+    else out += c === '.' ? '[^\\n\\r\\x{2028}\\x{2029}]' : c;
   }
   return RE2JS.translateRegExp(out);
 }
