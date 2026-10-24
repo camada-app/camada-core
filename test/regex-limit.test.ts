@@ -27,6 +27,12 @@ const V = JSON.parse(raw.toString('utf8')) as {
   translate: Array<[string, string]>;
 };
 
+const best = (f: () => unknown) => {   // best of 3 wall-clock ms
+  let b = Infinity;
+  for (let i = 0; i < 3; i++) { const t = performance.now(); f(); b = Math.min(b, performance.now() - t); }
+  return b;
+};
+
 /** Public matcher over a v5 snapshot holding just this rule; hit = the result names the rule. */
 const hits = (rule: Rule, input: Record<string, Val>): boolean => {
   const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules: [rule] }));
@@ -48,14 +54,10 @@ describe('regex-limit vectors', () => {
   });
 
   it.each(V.linear_time.map((r) => [r.id, r] as const))('linear_time %s stays under max_ms', (_id, r) => {
-    let best = Infinity, got = !r.hit;
-    for (let i = 0; i < 3; i++) {   // best of 3 fresh compiles: still measures the cold DFA build
-      const t = performance.now();
-      got = hits(r.rule, r.input);
-      best = Math.min(best, performance.now() - t);
-    }
+    let got = !r.hit;
+    const ms = best(() => { got = hits(r.rule, r.input); });   // best of 3 fresh compiles: still measures the cold DFA build
     expect(got).toBe(r.hit);
-    expect(best).toBeLessThan(r.max_ms);
+    expect(ms).toBeLessThan(r.max_ms);
   });
 
   const rr = V.refused_rule;
@@ -113,12 +115,16 @@ describe('1oqz: per-request regex work budget', () => {
     expect(res.map((re) => safeTest(re, H1, true))).toEqual([false, false, false]);
   }, 30_000);
 
-  it('withRegexBudget restores the previous budget (nesting-safe), even when f throws', () => {
-    const re = compileMatches('a', true)!, left = () => withRegexBudget(() => safeTest(compileMatches(LT1, true)!, H1, true));
-    expect(left()).toBe(false);
-    expect(() => withRegexBudget(() => { withRegexBudget(() => { throw new Error('x'); }); })).toThrow('x');
-    expect(safeTest(re, 'a', false)).toBe(true);
-    expect(withRegexBudget(() => withRegexBudget(() => left()) )).toBe(false);
+  it('a nested walk restores the outer budget, also when it throws', () => {
+    const [a, b, c, d, e] = Array.from({ length: 5 }, () => compileMatches(LT1, true)!);
+    withRegexBudget(() => {
+      expect(safeTest(a, H1, true)).toBe(false);   // the outer walk spends its whole budget
+      withRegexBudget(() => expect(safeTest(b, H1, true)).toBe(false));   // a nested walk starts fresh
+      expect(safeTest(c, H1, true)).toBe(true);   // the outer budget is still spent
+      expect(() => withRegexBudget(() => { throw new Error('x'); })).toThrow('x');
+      expect(safeTest(d, H1, true)).toBe(true);   // and still spent after a throw
+    });
+    expect(safeTest(e, H1, true)).toBe(false);   // unbudgeted after
   }, 30_000);
 
   it('N stored LT1 rules: a bounded walk that answers like over-cap', () => {
@@ -146,18 +152,11 @@ describe('1oqz: per-request regex work budget', () => {
     expect(withRegexBudget(() => [safeTest(re, H1, true), safeTest(re2, H1, true)])).toEqual([false, true]);
   }, 30_000);
 
-  const best = (f: () => unknown) => {   // best of 3 wall-clock ms
-    let b = Infinity;
-    for (let i = 0; i < 3; i++) { const t = performance.now(); f(); b = Math.min(b, performance.now() - t); }
-    return b;
-  };
-
   it('200 LT1 rules x 3 path forms cost one bounded walk', () => {
     const rules = many(200, 'path', LT1);
     const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules }));
     let rule: string | undefined;
     const ms = best(() => { rule = m.match({ ip: '8.8.8.8', path: H3 }).rule; });
-    console.log(`1oqz case 9: best of 3 = ${ms.toFixed(1)} ms`);
     expect(rule).toBe(rules[0].id);
     expect(ms).toBeLessThan(100);
   }, 60_000);
@@ -165,7 +164,6 @@ describe('1oqz: per-request regex work budget', () => {
   it('the worst shape found stays under the stated bound', () => {
     const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules: many(200, 'path', LT2) }));
     const ms = best(() => m.match({ ip: '8.8.8.8', path: '/A/./' + 'a'.repeat(95) }));
-    console.log(`1oqz case 10: best of 3 = ${ms.toFixed(1)} ms`);
     expect(ms).toBeLessThan(150);
   }, 60_000);
 });
