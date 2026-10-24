@@ -93,14 +93,12 @@ const HEX2 = /^[0-9a-fA-F]{2}/;
 /** A JS (non-`u`) pattern -> RE2 syntax that keeps the JS meaning, via re2js' translateRegExp (contract regex-limit v1). The
  *  test vectors' `translate` rows pin the output; edge-analyst blocklist.js carries the same function. */
 export function jsToRe2(p: string): string {
-  let out = '', cls = false;
-  let ce = 0;
+  let out = '', cls = false, ce = false, at = false;
   for (let i = 0; i < p.length; i++) {
-    const c = p[i], prev = ce;
-    ce = prev === 2 ? 1 : 0;
+    const c = p[i];
     if (c === '\\' && i + 1 < p.length) {
       const n = p[++i];
-      if (cls && 'sSdDwW'.includes(n)) ce = 1;   // a class escape: a '-' next to it is a literal '-'
+      if (cls) { ce = 'sSdDwW'.includes(n); at = true; }   // ce: the last atom in this class is \s \d \w or the like
       if ('AzQEpPa'.includes(n) || (n === 'B' && cls)) out += n;   // JS reads the bare letter (RE2: an anchor, quote or class); [\B] is a literal B
       else if (n === 'u' && !cls && SURR.test(p.slice(i + 1, i + 11))) {        // \uD83D\uDE00: how a non-u regex writes an astral character
         out += '\\x{' + ((parseInt(p.substr(i + 1, 4), 16) - 0xd800) * 0x400 + parseInt(p.substr(i + 7, 4), 16) - 0xdc00 + 0x10000).toString(16) + '}';
@@ -115,13 +113,16 @@ export function jsToRe2(p: string): string {
       else if (n === 'S' && !cls) out += '[^' + WS + ']';
       else out += c + n;
     } else if (cls) {
-      if (c === ']') { cls = false; ce = 0; }
-      if (c === '-' && (prev || /^\\[sSdDwW]/.test(p.slice(i + 1, i + 3)))) { out += '\\-'; if (prev === 1) ce = 2; }   // a literal - (and the atom after it is plain too)
-      else out += c;
+      if (c === ']') cls = false;
+      else {
+        if (c === '-' && at && p[i + 1] !== ']' && (ce || /^\\[sSdDwW]/.test(p.slice(i + 1, i + 3)))) throw new SyntaxError('a - next to \\s, \\d or \\w inside [ ]');   // JS reads it as a literal -, RE2 as a range: refuse, never emulate
+        ce = false; at = true;
+      }
+      out += c;
     } else if (c === '[') {
       out += c;
       if (p[i + 1] === '^') out += p[++i];
-      cls = true;
+      cls = true; ce = at = false;
     } else out += c === '.' ? '[^\\n\\r\\x{2028}\\x{2029}]' : c;
   }
   return RE2JS.translateRegExp(out);
