@@ -96,12 +96,14 @@ describe('1oqz: per-request regex work budget', () => {
   const LT1 = V.linear_time.find((r) => r.id === 'LT1')!.rule.conds[0].v;
   const LT2 = V.linear_time.find((r) => r.id === 'LT2')!.rule.conds[0].v;
   const H1 = '/' + 'a'.repeat(2047), H3 = '/A/./' + 'a'.repeat(2043);   // 1 and 3 distinct path forms
+  const P8 = '(?:a[^ ]{0,500}dQ|b[^ ]{0,500}kQ|c[^ ]{0,500}mQ|e[^ ]{0,500}pQ|f[^ ]{0,500}rQ|g[^ ]{0,500}tQ|h[^ ]{0,500}vQ|j[^ ]{0,500}xQ)';   // 8 branches of ~1000 instructions each, never gives up on a short path
+  const UA_BENIGN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0';
   const mk = (action: string, f: string, v: string, i: number): Rule => ({ id: `cr_${action}${f}${i}`, action, conds: [{ f, op: 'matches', v }] });
   const many = (n: number, f: string, v: string) => Array.from({ length: n }, (_, i) => mk('block', f, v, i));
   const run = (rules: Rule[], input: { path?: string; ua?: string }) =>
     new Matcher(parseSnapshot(empty, { ...emptyMeta, rules })).match({ ip: '8.8.8.8', ...input } as never).rule;
 
-  it('REQUEST_REGEX_WORK is 4194304 and a DFA state costs 64', () => {
+  it('REQUEST_REGEX_WORK is 8388608 and a call costs 64', () => {
     expect(REQUEST_REGEX_WORK).toBe(8388608);
     expect(REGEX_STATE_WORK).toBe(64);
   });
@@ -157,6 +159,16 @@ describe('1oqz: per-request regex work budget', () => {
   it('cheap rules never reach the budget', () => {
     expect(run(many(200, 'path', 'sqlmap|nikto'), { path: H3 })).toBeUndefined();
   }, 30_000);
+
+  // regression (review): a cold test that does not give up is charged the DFA bytes it built, not the program size per state; fresh Matcher each, three requests in a row, none may hit
+  it.each([
+    ['P8 on a short path', 'path', P8, { path: '/products/item-123/reviews' }],
+    ['P8 on a three-form path', 'path', P8, { path: '/Shop/Products/./Item-123/Reviews' }],
+    ['three [^/]{999} on a browser ua', 'ua', '[^/]{999}[^/]{999}[^/]{999}x', { path: '/', ua: UA_BENIGN }],
+  ])('200 cold rules on benign input: %s gives no rule', (_n, f, p, input) => {
+    const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules: many(200, f, p) }));
+    for (let i = 0; i < 3; i++) expect(m.match({ ip: '8.8.8.8', ...input } as never).rule).toBeUndefined();
+  }, 60_000);
 
   it('the give-up counter is wired', () => {
     const re = compileMatches(LT1, true) as RE2JS, d = re.re2().dfa;

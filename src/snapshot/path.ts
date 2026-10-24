@@ -143,7 +143,7 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
   if (re) {   // outside the try: a failure here must throw, not fall back to native
     const d = re.re2().dfa, clear = d.clearCache, match = d.match;
     d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM;
-    d.clearCache = function (this: typeof d) { dfaBuilt += this.stateCount; return clear.call(this); };   // states built before a clear, for safeTest
+    d.clearCache = function (this: typeof d) { dfaBuilt += this.stateBudget - this.memBudget; return clear.call(this); };   // the bytes of cache built before a clear (this.memBudget is what is left), for safeTest
     d.match = function (this: typeof d, ...a: Parameters<typeof d.match>) { const r = match.apply(this, a); if (r === null) dfaGiveUps++; return r; };   // null: the DFA gave up and the NFA runs the whole input
     WORK.set(re, { n: re.re2().numberOfInstructions() + REGEX_STATE_WORK, d });
     return re;
@@ -154,11 +154,11 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
 /** Per-request regex work (camada-all-1oqz), mirrors edge-analyst blocklist.js: a test of a value of length L through n instructions
  *  runs while any of REQUEST_REGEX_WORK is left, so a walk spends at most that plus one test. */
 export const REQUEST_REGEX_WORK = 8388608;
-/** The fixed cost of one call or one new DFA state. */
+/** The fixed cost of one call, added to a program's instruction count for the give-up charge. */
 export const REGEX_STATE_WORK = 64;
 let regexLeft = Infinity;   // Infinity outside a request rule walk (entity plane, direct .test): unbudgeted
 let dfaBuilt = 0, dfaGiveUps = 0;
-const WORK = new WeakMap<object, { n: number; d: { stateCount: number } | null }>();
+const WORK = new WeakMap<object, { n: number; d: { memBudget: number } | null }>();
 
 /** Runs a request rule walk (synchronous: the budget is module state) under a fresh REQUEST_REGEX_WORK; nesting-safe. */
 export function withRegexBudget<T>(f: () => T): T {
@@ -169,13 +169,13 @@ export function withRegexBudget<T>(f: () => T): T {
 
 /** re.test, except that a match-time engine failure (a RangeError) answers `onError`, like an over-cap value: deny for block/challenge/warn, miss for skip (contract regex-cap-sdk S4).
  *  Inside withRegexBudget a test runs while budget is left (regexLeft > 0), else it answers `onError` unrun. It is charged the full worst case (L+1)(n+64) when re2js's DFA
- *  gave up (the NFA then ran the whole input), else L+64 plus n+64 per DFA state built during the test. The native fallback is charged L+64. */
+ *  gave up (the NFA then ran the whole input), else L+64 plus the DFA cache bytes built during the test (re2js's own per-state accounting, memBudget). The native fallback is charged L+64. */
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
   if (regexLeft <= 0) return onError;
-  const w = WORK.get(re), g0 = dfaGiveUps, b0 = dfaBuilt, s0 = w?.d?.stateCount ?? 0;
+  const w = WORK.get(re), g0 = dfaGiveUps, b0 = dfaBuilt, m0 = w?.d?.memBudget ?? 0;
   let hit: boolean;
   try { hit = re.test(v); } catch { hit = onError; }
-  if (w) regexLeft -= !w.d ? v.length + REGEX_STATE_WORK : dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + w.n * (dfaBuilt - b0 + w.d.stateCount - s0);   // a clear already added its old stateCount to dfaBuilt
+  if (w) regexLeft -= !w.d ? v.length + REGEX_STATE_WORK : dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d.memBudget;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
   return hit;
 }
 
