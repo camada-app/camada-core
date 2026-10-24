@@ -198,9 +198,7 @@ function compileCond(c: SnapshotCondMeta, sets: Array<[Uint32Array, Uint32Array]
   if (c.op === 'matches') {
     const re = compileMatches(values[0], false);   // a pattern neither engine compiles never matches, and never throws
     const strip = c.f === 'ua' || c.f === 'header';   // contract regex-cap-sdk S5: a value with controls is tested raw AND stripped (deny), never exempts (skip)
-    const f = (v: string): boolean => {
-      return v.length > MAX_MATCH_INPUT ? deny : safeTest(re!, v, deny);   // S1: over the cap the regex never runs; S4: a match-time failure (RangeError) or an unaffordable test answers like over-cap
-    };
+    const f = (v: string): boolean => v.length > MAX_MATCH_INPUT ? deny : safeTest(re!, v, deny);   // S1: over the cap the regex never runs; S4: a match-time failure (RangeError) or an unaffordable test answers like over-cap
     return (r) => {
       const v = read(r);
       if (v === null || !re) return false;

@@ -141,10 +141,10 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
   let re: RE2JS | undefined;
   try { re = RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { /* fall through */ }
   if (re) {   // outside the try: a failure here must throw, not fall back to native
-    const d = re.re2().dfa; d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM;
+    const d = re.re2().dfa, clear = d.clearCache;
+    d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM;
+    d.clearCache = function (this: typeof d) { dfaClears++; return clear.call(this); };   // counts the cache clears safeTest charges for
     WORK.set(re, { n: re.re2().numberOfInstructions() + REGEX_STATE_WORK, d });
-    const clear = d.clearCache;
-    d.clearCache = function (this: typeof d) { dfaClears++; return clear.call(this); };   // a clear in a test is charged in full (safeTest)
     return re;
   }
   try { const nre = new RegExp(p, ci ? 'i' : ''); WORK.set(nre, { n: REGEX_STATE_WORK, d: null }); return nre; } catch { return null; }
@@ -166,17 +166,16 @@ export function withRegexBudget<T>(f: () => T): T {
   try { return f(); } finally { regexLeft = prev; }
 }
 
-/** `re.test(v)` under the request budget; an unaffordable test or a match-time failure (S4) answers `onError`. */
+/** re.test, except that a match-time engine failure (a RangeError) answers `onError`, like an over-cap value: deny for block/challenge/warn, miss for skip (contract regex-cap-sdk S4).
+ *  Inside withRegexBudget it first reserves the worst case (L+1)(n+64); a test that does not fit answers `onError` unrun. It then charges that when the DFA cleared its cache
+ *  (every NFA give-up clears first), else L+64 plus n+64 per new DFA state. The native fallback is charged L+64 and never refused. */
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
-  const w = WORK.get(re);
-  if (!w) { try { return re.test(v); } catch { return onError; } }
-  const worst = (v.length + 1) * w.n;
+  const w = WORK.get(re), worst = w?.d ? (v.length + 1) * w.n : 0;
   if (worst > regexLeft) return onError;
-  const c0 = dfaClears, s0 = w.d ? w.d.stateCount : 0;
+  const c0 = dfaClears, s0 = w?.d?.stateCount ?? 0;
   let hit: boolean;
   try { hit = re.test(v); } catch { hit = onError; }
-  // full W when the DFA cleared its cache (every NFA give-up clears first), else the length plus new states
-  regexLeft -= w.d === null ? v.length + REGEX_STATE_WORK : dfaClears !== c0 ? worst : v.length + REGEX_STATE_WORK + w.n * Math.max(0, w.d.stateCount - s0);
+  if (w) regexLeft -= !w.d ? v.length + REGEX_STATE_WORK : dfaClears !== c0 ? worst : v.length + REGEX_STATE_WORK + w.n * Math.max(0, w.d.stateCount - s0);
   return hit;
 }
 
