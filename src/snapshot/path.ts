@@ -141,16 +141,16 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
   let re: RE2JS | undefined;
   try { re = RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { /* fall through */ }
   if (re) {   // outside the try: a failure here must throw, not fall back to native
-    const d = re.re2().dfa, clear = d.clearCache, match = d.match, make = d.makeState, n = re.re2().numberOfInstructions() + REGEX_STATE_WORK;
-    if (typeof clear !== 'function' || typeof match !== 'function' || typeof make !== 'function' || typeof d.memBudget !== 'number' || typeof d.stateCount !== 'number') {
+    const d = re.re2().dfa, clear = d.clearCache, match = d.match, step = d.step, n = re.re2().numberOfInstructions() + REGEX_STATE_WORK;
+    if (typeof clear !== 'function' || typeof match !== 'function' || typeof step !== 'function' || typeof d.memBudget !== 'number' || typeof d.stateCount !== 'number') {
       WORK.set(re, { n, d: null, full: true });   // fail closed: re2js internals changed, so every test is charged the full worst case
       return re;
     }
     d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM;
     d.clearCache = function (this: typeof d) { dfaBuilt += this.stateBudget - this.memBudget; return clear.call(this); };   // the bytes of cache built before a clear (this.memBudget is what is left), for safeTest
     d.match = function (this: typeof d, ...a: Parameters<typeof d.match>) { const r = match.apply(this, a); if (r === null) dfaGiveUps++; return r; };   // null: the DFA gave up and the NFA runs the whole input
-    // makeState runs on every transition-table miss: one that finds its state already cached builds no bytes but computed a closure, so it is charged that closure's size
-    d.makeState = function (this: typeof d, pcs: number[], flag: number, ids: number[]) { const c0 = this.stateCount, r = make.call(this, pcs, flag, ids); if (this.stateCount === c0) dfaSteps += pcs.length + (r?.nfaStates?.length ?? 0) + REGEX_STEP_WORK; return r; };
+    // a transition-table miss whose target state is already cached builds no bytes but scanned the source state and closed over the target, so it is charged both sizes (anchor 0 is RE2Flags.UNANCHORED)
+    d.step = function (this: typeof d, s: Parameters<typeof d.step>[0], cls: number, rune: number, anchor: number) { const t = anchor === 0 ? s.next : s.nextAnchored, miss = t == null || t[cls] == null, c0 = this.stateCount, r = step.call(this, s, cls, rune, anchor); if (miss && this.stateCount === c0) dfaSteps += (s.nfaStates?.length ?? 0) + (r?.nfaStates?.length ?? 0) + REGEX_STEP_WORK; return r; };
     WORK.set(re, { n, d });
     return re;
   }
@@ -163,7 +163,7 @@ export const REQUEST_REGEX_WORK = 8388608;
 /** The fixed cost of one call, added to a program's instruction count for the give-up charge. */
 export const REGEX_STATE_WORK = 64;
 let regexLeft = Infinity;   // Infinity outside a request rule walk (entity plane, direct .test): unbudgeted
-/** The fixed cost of one DFA transition computed to an already-cached state, added to the NFA states it closed over (in and out). */
+/** The fixed cost of one DFA transition computed to an already-cached state, added to the source and target states' NFA-state counts. */
 export const REGEX_STEP_WORK = 256;
 let dfaBuilt = 0, dfaGiveUps = 0, dfaSteps = 0;
 const WORK = new WeakMap<object, { n: number; d: { memBudget: number } | null; full?: true }>();   // full: re2js internals missing, charge the worst case every test
@@ -178,7 +178,7 @@ export function withRegexBudget<T>(f: () => T): T {
 /** re.test, except that a match-time engine failure (a RangeError) answers `onError`, like an over-cap value: deny for block/challenge/warn, miss for skip (contract regex-cap-sdk S4).
  *  Inside withRegexBudget a test runs while budget is left (regexLeft > 0), else it answers `onError` unrun. It is charged the full worst case (L+1)(n+64) when re2js's DFA
  *  gave up (the NFA then ran the whole input), else L+64 plus the DFA cache bytes built during the test (re2js's own per-state accounting, memBudget) plus, per DFA transition
- *  computed to an already-cached state (no bytes, real CPU), the NFA states it closed over + REGEX_STEP_WORK. The native fallback is charged L+64; if the re2js internals wrapped
+ *  computed to an already-cached state (no bytes, real CPU), the source and target states' NFA-state counts + REGEX_STEP_WORK. The native fallback is charged L+64; if the re2js internals wrapped
  *  in compileMatches are missing, every test is charged the full worst case. */
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
   if (regexLeft <= 0) return onError;
