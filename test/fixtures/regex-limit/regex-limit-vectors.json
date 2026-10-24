@@ -1,0 +1,60 @@
+{
+  "_note": "Contract regex-limit v1 (camada-all-2pap): bounded cost of customer `matches` regexes at match time, and the save-time refusal of patterns re2js cannot compile. Byte-identical copies, change all of them together and update the sha256 every suite pins: camada/edge-analyst/test/regex-limit-vectors.json, camada-backend/test/regex-limit-vectors.json, camada-web/src/lib/regex-limit-vectors.json, camada-core/test/fixtures/regex-limit/regex-limit-vectors.json (the server SDKs read this one from the camada-core sibling checkout, like blk5; CAMADA_FIXTURES_DIR overrides). An input value is a string, or {prefix?, repeat, times, suffix?} meaning prefix + repeat x times + suffix. Each row is one rule in snapshot meta form; parse it into a v5 snapshot (camada-core blk5/v5-empty.bin with meta.rules = [rule]) and match the input: hit = the result names the rule. Engine classes: linear = re2js (edge-analyst, camada-core and the JS adapters through it) and Go regexp, which give the true answer; budget = Python regex timeout, Ruby Regexp timeout (3.2+), PHP PCRE match limit, Java deadline CharSequence, .NET matchTimeout, where an over-limit run answers like an over-cap value: hit for block/challenge/warn, miss for skip. over_limit: every engine runs every row and asserts hit[class]. linear_time: linear engines only; hit as given, and a fresh compile plus the first match takes under max_ms (best of 3). refused: patterns the regex-guard screen accepts but re2js refuses; edge-analyst validateCond, camada-backend regexError and camada-web regexProblem refuse each with the re2 kind, and, for refused_rule with the pattern as its one condition, every matcher answers cases[].hit[go] in camada-go (an uncompilable pattern never matches) and hit[native] everywhere else (backtracking engines compile them; edge-analyst and camada-core fall back to native RegExp for a stored pattern re2js refuses). accepted: guard- and re2js-accepted patterns no save-time check may refuse. translate: [JS pattern, jsToRe2 output] pairs that the four JS copies (edge-analyst blocklist.js, camada-core path.ts, camada-backend rules-custom.ts, camada-web lib/rules.ts) reproduce exactly with re2js 2.9.0; other languages ignore it. JS without u reads \\x not followed by two hex digits as a plain x, and [\\b] as a backspace (v1.1, camada-all-2pap review). v1.2: astral surrogate pairs, [\\c_]-style class controls, [\\B], and - next to a class escape in a class (camada-all-2pap review); rule (d) for that last one was replaced in v1.3 by a refusal (a [\\s-z]-style - next to a class escape in a class is refused, never translated). constants: every port asserts its own constant equals the value here.",
+  "version": 1,
+  "constants": {"MAX_MATCH_INPUT":2048,"MATCH_BUDGET_MS":50,"REQUEST_REGEX_BUDGET_MS":100,"PHP_MATCH_LIMIT":500000,"RE2JS_VERSION":"2.9.0"},
+  "over_limit": [
+    {"id":"OL1","rule":{"id":"cr_0000000002a1","action":"block","conds":[{"f":"ua","op":"matches","v":"(?:(?:a|aa){1,10}){1,10}a\\d"}]},"input":{"ip":"8.8.8.8","ua":{"repeat":"a","times":2048}},"hit":{"linear":false,"budget":true},"why":"over the limit a deny rule hits although the regex would miss"},
+    {"id":"OL2","rule":{"id":"cr_0000000002a2","action":"skip","conds":[{"f":"ua","op":"matches","v":"(?:(?:a|aa){1,10}){1,10}a\\d"}]},"input":{"ip":"8.8.8.8","ua":{"repeat":"a","times":2048}},"hit":{"linear":false,"budget":false},"why":"over the limit a skip rule misses"},
+    {"id":"OL3","rule":{"id":"cr_0000000002a3","action":"skip","conds":[{"f":"ua","op":"matches","v":"^(?:(?:(?:a|aa){1,10}){1,10}a\\d|a)"}]},"input":{"ip":"8.8.8.8","ua":{"repeat":"a","times":2048}},"hit":{"linear":true,"budget":false},"why":"a skip whose regex truly matches still misses when the limit runs out first"},
+    {"id":"OL4","rule":{"id":"cr_0000000002a4","action":"warn","conds":[{"f":"ua","op":"matches","v":"^(?:(?:(?:a|aa){1,10}){1,10}a\\d|a)"}]},"input":{"ip":"8.8.8.8","ua":{"repeat":"a","times":2048}},"hit":{"linear":true,"budget":true},"why":"a deny rule hits either way"},
+    {"id":"OL5","rule":{"id":"cr_0000000002a5","action":"challenge","conds":[{"f":"path","op":"matches","v":"(?:(?:a|aa){1,10}){1,10}a\\d"}]},"input":{"ip":"8.8.8.8","path":{"prefix":"/","repeat":"a","times":2047}},"hit":{"linear":false,"budget":true},"why":"path regexes run case-insensitively over three path forms; the limit holds there too"}
+  ],
+  "linear_time": [
+    {"id":"LT1","rule":{"id":"cr_0000000002b1","action":"block","conds":[{"f":"path","op":"matches","v":"(?:a{99}|a{99})(?:a{99}|a{99})(?:a{99}|a{99})(?:a{99}|a{99})(?:a{99}|a{99})(?:a{99}|a{99})(?:a{99}|a{99})(?:a{99}|a{99})(?:a{99}|a{99})(?:a{99}|a{99})(?:a{99}|a{99})(?:a{99}|a{99})z"}]},"input":{"ip":"8.8.8.8","path":{"prefix":"/","repeat":"a","times":2047}},"hit":false,"max_ms":50,"why":"camada-all-imlw round 3: 2.0 s in V8"},
+    {"id":"LT2","rule":{"id":"cr_0000000002b2","action":"block","conds":[{"f":"path","op":"matches","v":".*(?:a{60}|a{60}).*(?:a{60}|a{60}).*(?:a{60}|a{60})z"}]},"input":{"ip":"8.8.8.8","path":{"prefix":"/","repeat":"a","times":2047}},"hit":false,"max_ms":50,"why":"camada-all-imlw round 3: 4.1 s in V8"}
+  ],
+  "refused": [
+    {"id":"RF1","kind":"negative lookahead","pattern":"Mozilla(?!.*Chrome)","cases":[{"ua":"Mozilla/5.0 Firefox/130.0","hit":{"go":false,"native":true}},{"ua":"Mozilla/5.0 Chrome/129.0","hit":{"go":false,"native":false}}]},
+    {"id":"RF2","kind":"lookahead","pattern":"bot(?=/[0-9])","cases":[{"ua":"examplebot/2.1","hit":{"go":false,"native":true}},{"ua":"examplebot","hit":{"go":false,"native":false}}]},
+    {"id":"RF3","kind":"lookbehind","pattern":"(?<=/)api","cases":[{"ua":"client/api","hit":{"go":false,"native":true}},{"ua":"api","hit":{"go":false,"native":false}}]},
+    {"id":"RF4","kind":"negative lookbehind","pattern":"(?<!x)y","cases":[{"ua":"ay","hit":{"go":false,"native":true}},{"ua":"xy","hit":{"go":false,"native":false}}]},
+    {"id":"RF5","kind":"repeat count above 1000","pattern":"a{1001}","cases":[{"ua":{"repeat":"a","times":1001},"hit":{"go":false,"native":true}},{"ua":{"repeat":"a","times":1000},"hit":{"go":false,"native":false}}]}
+  ],
+  "refused_rule": {"id":"cr_0000000002c1","action":"block","field":"ua"},
+  "accepted": [
+    "(Scrapy|python-requests)/[0-9]",
+    "^/api/v[0-9]+/",
+    "sqlmap|nikto",
+    "(?<tool>sqlmap|nikto)/[0-9]",
+    "^1\\.[0-2]\\.",
+    "a\\sb",
+    "[^]x",
+    "\\cJ",
+    "\\u00e9",
+    "\\Aabc\\z",
+    "\\p{L}",
+    "a{1000}"
+  ],
+  "translate": [
+    ["a.b","a[^\\n\\r\\x{2028}\\x{2029}]b"],
+    ["a\\sb","a[\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}]b"],
+    ["[^\\s]","[^\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}]"],
+    ["x\\S","x[^\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}]"],
+    ["[\\s\\d]","[\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}\\d]"],
+    ["\\Aabc\\z","Aabcz"],
+    ["\\p{L}","p{L}"],
+    ["\\u{1F600}","u{1F600}"],
+    ["\\c1","\\\\c1"],
+    ["[^]x","[\\x00-\\x{10FFFF}]x"],
+    ["[]x","[^\\x00-\\x{10FFFF}]x"],
+    ["(?<tool>sqlmap|nikto)/[0-9]","(?P<tool>sqlmap|nikto)\\/[0-9]"],
+    ["\\u00e9","\\x{00e9}"],
+    ["a/b","a\\/b"],
+    ["\\x{41}","x{41}"],
+    ["[\\x{41}]","[x{41}]"],
+    ["[\\b]","[\\x08]"],
+    ["\\uD83D\\uDE00","\\x{1f600}"],
+    ["[\\c_]","[\\x1f]"],
+    ["[\\B]","[B]"]
+  ]
+}
