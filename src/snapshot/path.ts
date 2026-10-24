@@ -87,6 +87,7 @@ export const pathHit = (pred: (p: string, deny: boolean) => boolean, forms: Path
 
 const WS = '\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}';   // JS \s
 const HEX4 = /^[0-9a-fA-F]{4}/;
+const HEX2 = /^[0-9a-fA-F]{2}/;
 
 /** A JS (non-`u`) pattern -> RE2 syntax that keeps the JS meaning, via re2js' translateRegExp (contract regex-limit v1). The
  *  test vectors' `translate` rows pin the output; edge-analyst blocklist.js carries the same function. */
@@ -98,7 +99,9 @@ export function jsToRe2(p: string): string {
       const n = p[++i];
       if ('AzQEpPa'.includes(n)) out += n;                                   // JS reads the bare letter; RE2 an anchor, quote or class
       else if (n === 'u') out += HEX4.test(p.slice(i + 1, i + 5)) ? '\\u' : 'u';
+      else if (n === 'x') out += HEX2.test(p.slice(i + 1, i + 3)) ? '\\x' : 'x';
       else if (n === 'c') out += /[A-Za-z]/.test(p[i + 1] || '') ? '\\c' : '\\\\c';
+      else if (n === 'b' && cls) out += '\\x08';
       else if (n === 's') out += cls ? WS : '[' + WS + ']';
       else if (n === 'S' && !cls) out += '[^' + WS + ']';
       else out += c + n;
