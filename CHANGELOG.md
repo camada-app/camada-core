@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- A `matches` count written with a leading zero (`a{02}`, `a{0,03}`) is read as its decimal value, as JS reads it, instead of as literal text; `a{01001}` becomes `a{1001}`, which re2js refuses, so it runs on the native `RegExp`. re2js's lazy-DFA cache is bounded at 64 KiB per pattern (it defaulted to 8 MiB; 200 wide rules held 1147 MiB), with the same answers (camada-all-mx0h, camada-all-sl00).
 - Customer `matches` rules (path, user agent, header) run on re2js, a linear-time engine, so a pathological pattern costs bounded time instead of seconds. A stored pattern re2js refuses (a lookaround) keeps running on the native `RegExp`. `re2js` is the first runtime dependency (camada-all-2pap).
 - Beacon rows relayed from `/_cam/fp` carry `rts`, the SDK host's receipt time (`Date.now()`, set after the body spread so a browser cannot forge it). The analyst uses it in place of the browser clock for `/e` beacons, so a beacon alone in a batch still joins its request (camada-all-wd3b).
 
