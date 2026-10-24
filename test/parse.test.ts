@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher, type SnapshotRuleMeta, type SnapshotCondMeta } from '../src/index.js';
 
 const raw = readFileSync(new URL('./fixtures/blk3/v3-basic.bin', import.meta.url));
@@ -157,6 +158,11 @@ describe('rule compilation', () => {
       vi.spyOn(RegExp.prototype, 'test').mockImplementation(function (this: RegExp, v: string) {
         if (this.source === 'x') throw new RangeError('Maximum call stack size exceeded');
         return real.call(this, v);
+      });
+      const re2 = RE2JS.prototype.test;   // customer patterns run on re2js now
+      vi.spyOn(RE2JS.prototype, 'test').mockImplementation(function (this: RE2JS, v: string | number[] | Uint8Array) {
+        if (this.pattern() === 'x') throw new RangeError('Maximum call stack size exceeded');
+        return re2.call(this, v);
       });
     };
     const skip = (conds: SnapshotCondMeta[]): SnapshotRuleMeta => ({ id: 'cr_skip', action: 'skip', conds });
