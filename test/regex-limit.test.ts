@@ -108,6 +108,28 @@ describe('regex-limit vectors', () => {
     expect(() => jsToRe2('x[!-\\c-\\w]y')).toThrow(SyntaxError);
   });
 
+  it('a legacy octal escape in [ ] is one atom, as V8 reads it (camada-all-0ksq)', () => {
+    expect(jsToRe2('x[\\400]y')).toBe('x[\\0400]y');
+    expect(jsToRe2('x[\\12]y')).toBe('x[\\12]y');
+    for (const p of ['x[\\0-\\12-\\d]y', 'x[\\400]y', 'x[\\777]y', 'x[\\377]y', 'x[\\08]y', 'x[\\40]y']) {
+      const re = new RegExp(p), r2 = compileMatches(p, false)!, bad: string[] = [];
+      for (let c = 0; c < 0x10000; c++) {
+        if (c >= 0xd800 && c <= 0xdfff) continue;
+        const s = 'x' + String.fromCharCode(c) + 'y';
+        if (r2.test(s) !== re.test(s)) bad.push(c.toString(16));
+      }
+      expect(bad, p).toEqual([]);
+    }
+    const r2 = compileMatches('x[\\0-\\12-\\d]y', false)!;
+    for (const s of ['x\ny', 'x\x00y', 'x-y', 'x5y', 'x2y']) expect(r2.test(s), s).toBe(new RegExp('x[\\0-\\12-\\d]y').test(s));
+  });
+
+  it('\\xHH, \\uHHHH and \\cX are one class atom (camada-all-kfe1)', () => {
+    const p = 'x[\\x00-\\x41-\\d]y', r2 = compileMatches(p, false)!, js = new RegExp(p);
+    for (const s of ['xAy', 'x-y', 'x5y']) expect([r2.test(s), js.test(s)], s).toEqual([true, true]);
+    expect([r2.test('xay'), js.test('xay')]).toEqual([false, false]);
+    expect(() => jsToRe2('[\\s-\\x41-z]')).toThrow(SyntaxError);
+  });
   it.each(V.translate)('translate %s', (from, to) => {
     expect(jsToRe2(from)).toBe(to);
   });
