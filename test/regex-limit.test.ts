@@ -5,9 +5,9 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
-import { compileMatches, jsToRe2, MAX_MATCH_INPUT, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, safeTest, withRegexBudget } from '../src/snapshot/path.js';
+import { compileMatches, jsToRe2, MAX_MATCH_INPUT, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = '9a953df1c928148a7cb5b9ab421d409945f05f27d92e147aac742bc7b4f0a987';
+const REGEX_LIMIT_VECTORS_SHA256 = '805e8ce0b02150444bfd6717c7c636e335af6a8a26e0ccb6c5d26d698f6bded9';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
@@ -47,6 +47,7 @@ describe('regex-limit vectors', () => {
   it('constants match', () => {
     expect(MAX_MATCH_INPUT).toBe(V.constants.MAX_MATCH_INPUT);
     expect(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).dependencies.re2js).toBe(V.constants.RE2JS_VERSION);
+    expect(RE2_DFA_MAX_MEM).toBe(V.constants.RE2_DFA_MAX_MEM);
   });
 
   it.each(V.over_limit.map((r) => [r.id, r] as const))('over_limit %s answers the linear class', (_id, r) => {
