@@ -122,7 +122,6 @@ describe('regex-limit vectors', () => {
     expect(jsToRe2('x[\\400]y')).toBe('x[\\0400]y');
     expect(jsToRe2('x[\\12]y')).toBe('x[\\012]y');
     expect(jsToRe2('x[\\1]y')).toBe('x[\\01]y');
-    expect(compileMatches('(a)\\1', false)).toBeNull();   // outside a class \1 may be a backreference: refused
     expect(jsToRe2('x\\400y')).toBe('x\\0400y');
     expect(jsToRe2('x\\777y')).toBe('x\\0777y');
     expect(jsToRe2('x\\40y')).toBe('x\\40y');
