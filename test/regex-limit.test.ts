@@ -120,12 +120,15 @@ describe('regex-limit vectors', () => {
 
   it('a legacy octal escape, in or out of [ ], is one atom, as V8 reads it (camada-all-0ksq, camada-all-sm1u)', () => {
     expect(jsToRe2('x[\\400]y')).toBe('x[\\0400]y');
-    expect(jsToRe2('x[\\12]y')).toBe('x[\\12]y');
+    expect(jsToRe2('x[\\12]y')).toBe('x[\\012]y');
+    expect(jsToRe2('x[\\1]y')).toBe('x[\\01]y');
+    expect(compileMatches('(a)\\1', false)).toBeNull();   // outside a class \1 may be a backreference: refused
     expect(jsToRe2('x\\400y')).toBe('x\\0400y');
     expect(jsToRe2('x\\777y')).toBe('x\\0777y');
     expect(jsToRe2('x\\40y')).toBe('x\\40y');
-    for (const p of ['x[\\0-\\12-\\d]y', 'x[\\400]y', 'x[\\777]y', 'x[\\377]y', 'x[\\08]y', 'x[\\40]y', 'x\\400y', 'x\\777y', 'x\\377y', 'x\\40y']) {
+    for (const p of ['x[\\0-\\12-\\d]y', 'x[\\400]y', 'x[\\777]y', 'x[\\377]y', 'x[\\08]y', 'x[\\40]y', 'x[\\1]y', 'x[\\7]y', 'x[\\1-\\3]y', 'x[\\12]y', 'x\\400y', 'x\\777y', 'x\\377y', 'x\\40y']) {
       const re = new RegExp(p), r2 = compileMatches(p, false)!, bad: string[] = [];
+      expect(r2, p).not.toBeNull();
       for (let c = 0; c < 0x10000; c++) {
         if (c >= 0xd800 && c <= 0xdfff) continue;
         const s = 'x' + String.fromCharCode(c) + 'y';
