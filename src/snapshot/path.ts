@@ -166,7 +166,7 @@ let regexLeft = Infinity;   // Infinity outside a request rule walk (entity plan
 /** The fixed cost of one DFA transition computed to an already-cached state (no new bytes), added to its target state's NFA-state count; every transition computed is charged its source state's NFA-state count. */
 export const REGEX_STEP_WORK = 256;
 let dfaBuilt = 0, dfaGiveUps = 0, dfaSteps = 0;
-const WORK = new WeakMap<object, { n: number; d: null; full: true } | { n: number; d: { memBudget: number }; full?: undefined }>();   // full: re2js internals missing, charge the worst case every test
+const WORK = new WeakMap<object, { n: number; d: { memBudget: number } | null; full?: true }>();   // full: re2js internals missing, charge the worst case every test
 
 /** Runs a request rule walk (synchronous: the budget is module state) under a fresh REQUEST_REGEX_WORK; nesting-safe. */
 export function withRegexBudget<T>(f: () => T): T {
@@ -185,7 +185,7 @@ export function safeTest(re: { test(s: string): boolean }, v: string, onError: b
   const w = WORK.get(re), g0 = dfaGiveUps, b0 = dfaBuilt, s0 = dfaSteps, m0 = w?.d?.memBudget ?? 0;
   let hit: boolean;
   try { hit = re.test(v); } catch { hit = onError; }
-  if (w) regexLeft -= w.full || dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d.memBudget + dfaSteps - s0;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
+  if (w) regexLeft -= w.full || dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d!.memBudget + dfaSteps - s0;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
   return hit;
 }
 
