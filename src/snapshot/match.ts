@@ -12,7 +12,7 @@
 
 import { inRange4, type Snapshot, type RangeSet, type RuleAction, type RuleRequest, type CompiledRule } from './parse.js';
 import { parseIp4, parseIp6Into } from './ipparse.js';
-import { pathForms, pathHit, prefixHit, withRegexBudget, type PathForms } from './path.js';
+import { pathForms, pathHit, prefixHit, withRegexBudget, type PathForms, type PathPred } from './path.js';
 
 export interface MatchInput {
   ip?: string | null;
@@ -40,13 +40,13 @@ export interface MatchResult {
 }
 
 /** Exact, prefix and (block side only) regex entries against one canonical-or-raw path form. */
-function pathIn(exact: Set<string>, prefix: Set<string>, regex: Array<(p: string, deny: boolean) => boolean>, p: string): boolean {
+function pathIn(exact: Set<string>, prefix: Set<string>, regex: PathPred[], p: string): boolean {
   if (exact.has(p)) return true;
   if (prefix.size && prefixHit(prefix, p)) return true;
   for (const pred of regex) if (pred(p, true)) return true;   // the block side is a deny
   return false;
 }
-const NO_REGEX: Array<(p: string, deny: boolean) => boolean> = [];
+const NO_REGEX: PathPred[] = [];
 
 /** A side decided (or nothing did): no rule, so `action` is null and `rule` absent. */
 const NONE = { block: false, challenge: false, allowed: false, warn: false, action: null } as const;
