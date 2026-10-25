@@ -7,7 +7,7 @@ import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
 import { compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = 'b9e845ff747706e7395c620ccb22ae1e79e322973131ce7e704241e80a611f57';
+const REGEX_LIMIT_VECTORS_SHA256 = '73d551b99b7e8ad44bc551da5851bcd43ed94d6787beb258b7486b71c1133ae2';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
@@ -25,6 +25,7 @@ const V = JSON.parse(raw.toString('utf8')) as {
   refused_rule: { id: string; action: string; field: string };
   accepted: string[];
   translate: Array<[string, string]>;
+  translate_refused: string[];
 };
 
 const best = (f: () => unknown) => {   // best of 3 wall-clock ms
@@ -81,7 +82,7 @@ describe('regex-limit vectors', () => {
   });
 
   it('a - next to a class escape is refused (never translated); a stored pattern never matches (rfyr)', () => {
-    for (const p of ['[\\s-z]', '[a-\\d]', '[\\s-a-b-e]', '[\\s-\\x41-z]']) {
+    for (const p of V.translate_refused) {
       expect(() => jsToRe2(p), p).toThrow(SyntaxError);
       expect(() => RE2JS.compile(jsToRe2(p)), p).toThrow();
       expect(compileMatches(p, false), p).toBeNull();
