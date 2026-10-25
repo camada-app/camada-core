@@ -79,6 +79,8 @@ describe('regex-limit vectors', () => {
   });
 
   it.each(V.accepted_match.flatMap((r) => r.cases.map((c, i) => [`${r.id}#${i} ${r.pattern} on ${JSON.stringify(c.ua)}`, r, c] as const)))('accepted_match %s', (_l, r, c) => {
+    expect(V.accepted).toContain(r.pattern);
+    expect(c.hit.go).toBe(c.hit.native);
     expect(hits({ id: rr.id, action: rr.action, conds: [{ f: rr.field, op: 'matches', v: r.pattern }] }, { ip: '8.8.8.8', ua: c.ua })).toBe(c.hit.go);
     expect(new RegExp(r.pattern).test(val(c.ua))).toBe(c.hit.native);   // V8 is the reference the native SDKs follow
   });
