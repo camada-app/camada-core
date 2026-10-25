@@ -12,7 +12,7 @@
 
 import { inRange4, type Snapshot, type RangeSet, type RuleAction, type RuleRequest, type CompiledRule } from './parse.js';
 import { parseIp4, parseIp6Into } from './ipparse.js';
-import { pathForms, pathHit, prefixHit, withRegexBudget, type PathForms } from './path.js';
+import { pathForms, pathHit, prefixHit, withRegexBudget, type PathForms, type PathPred } from './path.js';
 
 export interface MatchInput {
   ip?: string | null;
@@ -40,13 +40,13 @@ export interface MatchResult {
 }
 
 /** Exact, prefix and (block side only) regex entries against one canonical-or-raw path form. */
-function pathIn(exact: Set<string>, prefix: Set<string>, regex: RegExp[], p: string): boolean {
+function pathIn(exact: Set<string>, prefix: Set<string>, regex: PathPred[], p: string): boolean {
   if (exact.has(p)) return true;
   if (prefix.size && prefixHit(prefix, p)) return true;
-  for (const re of regex) if (re.test(p)) return true;
+  for (const pred of regex) if (pred(p, true)) return true;   // the block side is a deny
   return false;
 }
-const NO_REGEX: RegExp[] = [];
+const NO_REGEX: PathPred[] = [];
 
 /** A side decided (or nothing did): no rule, so `action` is null and `rule` absent. */
 const NONE = { block: false, challenge: false, allowed: false, warn: false, action: null } as const;
@@ -157,28 +157,26 @@ export class Matcher {
       else has6 = parseIp6Into(ip, this.W, this.G);
     }
     const paths = pathForms(input.path);
-    if (S.rules.length) {
-      const r = this.R;
-      r.n4 = n4; r.has6 = has6;
-      r.asn = input.asn ?? null; r.country = input.country ?? null; r.tlsx = input.tlsx ?? null;
-      r.paths = paths; r.ua = input.ua ?? null; r.header = input.header ?? null;
-      // one synchronous walk under the request's regex work budget (camada-all-1oqz); no await inside, so it cannot leak across requests
-      const hitRule = withRegexBudget(() => {
+    // one synchronous decision under the request's regex work budget (camada-all-1oqz, zhf5): the rule walk and the block side's meta regex share it; no await inside, so it cannot leak across requests
+    return withRegexBudget((): MatchResult => {
+      if (S.rules.length) {
+        const r = this.R;
+        r.n4 = n4; r.has6 = has6;
+        r.asn = input.asn ?? null; r.country = input.country ?? null; r.tlsx = input.tlsx ?? null;
+        r.paths = paths; r.ua = input.ua ?? null; r.header = input.header ?? null;
         for (const rule of S.rules) {              // the order IS the precedence (§A4): first match wins
           let hit = true;
           for (const cond of rule.conds) if (!cond(r)) { hit = false; break; }   // a plain loop: every() would allocate a closure per rule
-          if (hit) return rule;
+          if (hit) return ruleResult(rule, S.version);
         }
-        return null;
-      });
-      if (hitRule) return ruleResult(hitRule, S.version);
-    }
-    const allowed = this.side(S.allow, input, n4, has6, paths, false);
-    if (allowed) return { ...NONE, allowed: true, reason: allowed, version: S.version };
-    const blocked = this.blockSide(input, n4, has6, paths);
-    if (blocked) return { ...NONE, block: true, reason: blocked, version: S.version };
-    const chal = this.side(S.challenge, input, n4, has6, paths, true);
-    if (chal) return { ...NONE, challenge: true, reason: chal, version: S.version };
-    return { ...NONE, version: S.version };
+      }
+      const allowed = this.side(S.allow, input, n4, has6, paths, false);
+      if (allowed) return { ...NONE, allowed: true, reason: allowed, version: S.version };
+      const blocked = this.blockSide(input, n4, has6, paths);
+      if (blocked) return { ...NONE, block: true, reason: blocked, version: S.version };
+      const chal = this.side(S.challenge, input, n4, has6, paths, true);
+      if (chal) return { ...NONE, challenge: true, reason: chal, version: S.version };
+      return { ...NONE, version: S.version };
+    });
   }
 }

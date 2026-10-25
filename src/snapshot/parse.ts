@@ -18,7 +18,7 @@
 // The version byte is advisory: sections 10-15 are read whenever they are present.
 // Every path value is canonicalised once here (./path.ts, contracts §D3 "Path matching").
 
-import { canonPath, compileMatches, CTL_ANY, CTL_G, dirKey, MAX_MATCH_INPUT, pathHit, pathPred, safeTest, type PathForms } from './path.js';
+import { canonPath, compileMatches, CTL_ANY, CTL_G, dirKey, MAX_MATCH_INPUT, pathHit, pathPred, safeTest, type PathForms, type PathPred } from './path.js';
 
 /** The non-IP half of a v4 side list (allow or challenge). */
 export interface SnapshotSetMeta {
@@ -109,7 +109,8 @@ export interface Snapshot {
   s6: Uint32Array; e6: Uint32Array; n6: number; bm6: Uint32Array;
   asnBm: Uint32Array; asnExtra: Uint32Array;
   country: Set<string>; tls: Set<string>;
-  pathsExact: Set<string>; pathsPrefix: Set<string>; pathsRegex: RegExp[];
+  pathsExact: Set<string>; pathsPrefix: Set<string>;
+  pathsRegex: PathPred[];   // re2js, case-insensitive, run inside the request's regex budget (camada-all-zhf5); a refused pattern never matches
   allow: RangeSet; challenge: RangeSet;
   rules: CompiledRule[];        // v5 only; empty on v3/v4, and the matcher then skips them
 }
@@ -259,7 +260,7 @@ export function parseSnapshot(bin: ArrayBuffer | Uint8Array, meta: SnapshotMeta)
     tls: new Set(meta.tls || []),
     pathsExact: new Set((meta.pathsExact || []).map((p) => canonPath(p))),
     pathsPrefix: new Set((meta.pathsPrefix || []).map(dirKey)),
-    pathsRegex: (meta.pathsRegex || []).map((p) => new RegExp(p, 'i')),
+    pathsRegex: (meta.pathsRegex || []).map((p) => pathPred('matches', [String(p)])),
     allow: rangeSet(sec[10] || EMPTY, sec[11] || EMPTY, meta.allow),
     challenge: rangeSet(sec[12] || EMPTY, sec[13] || EMPTY, meta.challenge),
     rules: compileRules(meta, rule4, rule6),
