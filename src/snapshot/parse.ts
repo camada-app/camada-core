@@ -18,7 +18,7 @@
 // The version byte is advisory: sections 10-15 are read whenever they are present.
 // Every path value is canonicalised once here (./path.ts, contracts §D3 "Path matching").
 
-import { canonPath, compileMatches, CTL_ANY, CTL_G, dirKey, MAX_MATCH_INPUT, pathHit, pathPred, safeTest, type PathForms } from './path.js';
+import { canonPath, compileMatches, CTL_ANY, CTL_G, dirKey, MAX_MATCH_INPUT, pathHit, pathPred, safeTest, type PathForms, type PathPred } from './path.js';
 
 /** The non-IP half of a v4 side list (allow or challenge). */
 export interface SnapshotSetMeta {
@@ -110,7 +110,7 @@ export interface Snapshot {
   asnBm: Uint32Array; asnExtra: Uint32Array;
   country: Set<string>; tls: Set<string>;
   pathsExact: Set<string>; pathsPrefix: Set<string>;
-  pathsRegex: Array<(p: string, deny: boolean) => boolean>;   // re2js, case-insensitive, run inside the request's regex budget (camada-all-zhf5); a refused pattern never matches
+  pathsRegex: PathPred[];   // re2js, case-insensitive, run inside the request's regex budget (camada-all-zhf5); a refused pattern never matches
   allow: RangeSet; challenge: RangeSet;
   rules: CompiledRule[];        // v5 only; empty on v3/v4, and the matcher then skips them
 }
