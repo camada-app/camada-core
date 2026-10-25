@@ -152,7 +152,7 @@ describe('rule compilation', () => {
   // contract regex-cap-sdk S4: a regex that throws while testing answers like an over-cap value.
   describe('a regex that throws at match time (S4)', () => {
     afterEach(() => vi.restoreAllMocks());
-    // re2js never throws at match time, so force it: a 'boom' pattern (a re2js pattern; the inputs carry the literal, or the path pre-check would skip the test) makes RE2JS.prototype.test throw. The engine's own regexes (path canonicalisation) are native and still run.
+    // re2js never throws at match time, so force it: a 'boom' pattern makes RE2JS.prototype.test throw. The engine's own regexes (path canonicalisation) are native and still run.
     const throwing = () => {
       const real = RE2JS.prototype.test;
       vi.spyOn(RE2JS.prototype, 'test').mockImplementation(function (this: RE2JS, v: Parameters<RE2JS['test']>[0]) {
