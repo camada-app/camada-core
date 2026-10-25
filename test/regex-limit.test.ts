@@ -253,3 +253,21 @@ describe('rfyr: a pattern re2js refuses never matches', () => {
     expect(ms).toBeLessThan(500);   // measured 114-117 ms; today minutes
   }, 60_000);
 });
+
+// camada-all-7ztr: a stored `matches` value that is not a string never matches (no String() coercion).
+describe('7ztr: a non-string matches value never matches', () => {
+  const VALS: unknown[] = [123, true, null, { x: 1 }, ['^/a'], [123]];
+  const run7 = (rules: unknown[]) => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules } as never))
+    .match({ ip: '8.8.8.8', path: '/a', ua: '123 [object Object] true', header: () => '123 [object Object] true /a' } as never);
+  const cond = (f: string, v: unknown) => ({ f, op: 'matches', v, ...(f === 'header' ? { name: 'x-h' } : {}) });
+  const blk = { id: 'cr_blk', action: 'block', conds: [{ f: 'ip', op: 'is_not', v: '1.1.1.1' }] };
+
+  for (const v of VALS) for (const f of ['ua', 'path', 'header']) {
+    it(`${JSON.stringify(v)} on ${f}: block never matches, skip does not exempt`, () => {
+      expect(run7([{ id: 'cr_b', action: 'block', conds: [cond(f, v)] }]).block).toBe(false);
+      const r = run7([{ id: 'cr_s', action: 'skip', conds: [cond(f, v)] }, blk]);
+      expect(r.allowed).toBe(false);
+      expect(r.rule).toBe('cr_blk');
+    });
+  }
+});
