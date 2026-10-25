@@ -115,7 +115,6 @@ describe('regex-limit vectors', () => {
     expect(jsToRe2('x\\400y')).toBe('x\\0400y');
     expect(jsToRe2('x\\777y')).toBe('x\\0777y');
     expect(jsToRe2('x\\40y')).toBe('x\\40y');
-    for (const [s, hit] of [['x 0y', true], ['x\u0100y', false]]) expect(compileMatches('x\\400y', false)!.test(s), s).toBe(hit);
     for (const p of ['x[\\0-\\12-\\d]y', 'x[\\400]y', 'x[\\777]y', 'x[\\377]y', 'x[\\08]y', 'x[\\40]y', 'x\\400y', 'x\\777y', 'x\\377y', 'x\\40y']) {
       const re = new RegExp(p), r2 = compileMatches(p, false)!, bad: string[] = [];
       for (let c = 0; c < 0x10000; c++) {
