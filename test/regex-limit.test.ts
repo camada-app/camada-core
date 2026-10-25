@@ -254,9 +254,9 @@ describe('rfyr: a pattern re2js refuses never matches', () => {
   }, 60_000);
 });
 
-// camada-all-7ztr: a stored `matches` value that is not a string never matches (no String() coercion).
-describe('7ztr: a non-string matches value never matches', () => {
-  const VALS: unknown[] = [123, 0, true, null, { x: 1 }, ['^/a'], [123]];
+// camada-all-7ztr, camada-all-510r: a stored `matches` value that is not a string, or is '', never matches (no String() coercion, no empty regex).
+describe('7ztr, 510r: a non-string or empty matches value never matches', () => {
+  const VALS: unknown[] = [123, 0, true, null, { x: 1 }, ['^/a'], [123], ''];   // '': an empty regex would match everything (camada-all-510r)
   const STR = '123 null 0 true [object Object]';   // every String()-coerced form of VALS appears in the ua, header and path
   const OVER = 'a'.repeat(MAX_MATCH_INPUT + 1);
   const run7 = (rules: unknown[], over = '') => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules } as never))
@@ -268,24 +268,6 @@ describe('7ztr: a non-string matches value never matches', () => {
     it(`${JSON.stringify(v)} on ${f}${over ? ' over the cap' : ''}: block never matches, skip does not exempt`, () => {
       expect(run7([{ id: 'cr_b', action: 'block', conds: [cond(f, v)] }], over).block).toBe(false);
       const r = run7([{ id: 'cr_s', action: 'skip', conds: [cond(f, v)] }, blk], over);
-      expect(r.allowed).toBe(false);
-      expect(r.rule).toBe('cr_blk');
-    });
-  }
-});
-
-// camada-all-510r: a stored empty `matches` value never matches (it used to compile to an empty regex that matches everything).
-describe('510r: an empty matches value never matches', () => {
-  const OVER = 'a'.repeat(MAX_MATCH_INPUT + 1);
-  const run = (rules: unknown[], over: string) => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules } as never))
-    .match({ ip: '8.8.8.8', path: over === 'path' ? `/a/${OVER}` : '/a', ua: over === 'ua' ? OVER : 'ua', header: () => (over === 'header' ? OVER : 'h') } as never);
-  const blk = { id: 'cr_blk', action: 'block', conds: [{ f: 'ip', op: 'is_not', v: '1.1.1.1' }] };
-
-  for (const f of ['ua', 'path', 'header']) for (const over of ['', f]) {
-    it(`'' on ${f}${over ? ' over the cap' : ''}: block never matches, skip does not exempt`, () => {
-      const cond = { f, op: 'matches', v: '', ...(f === 'header' ? { name: 'x-h' } : {}) };
-      expect(run([{ id: 'cr_b', action: 'block', conds: [cond] }], over).block).toBe(false);
-      const r = run([{ id: 'cr_s', action: 'skip', conds: [cond] }, blk], over);
       expect(r.allowed).toBe(false);
       expect(r.rule).toBe('cr_blk');
     });
