@@ -104,7 +104,7 @@ export function jsToRe2(p: string): string {
     const c = p[i];
     if (c === '\\' && i + 1 < p.length) {
       const n = p[++i];
-      if (cls) { ce = 'sSdDwW'.includes(n); at = !rng; rng = false; }   // ce: the last atom in this class is \s \d \w or the like; rng: a range's low end was just read, so its high end cannot start another range
+      if (cls) { ce = 'sSdDwW'.includes(n); at = !rng; rng = false; }   // ce: the last atom in this class is \s \d \w or the like; rng: the - just read is a range operator, so the next atom (the range's high end) cannot start another range
       if ('AzQEpPa'.includes(n) || (n === 'B' && cls)) out += n;   // JS reads the bare letter (RE2: an anchor, quote or class); [\B] is a literal B
       else if (n === 'u' && !cls && SURR.test(p.slice(i + 1, i + 11))) {        // \uD83D\uDE00: how a non-u regex writes an astral character
         out += '\\x{' + ((parseInt(p.substr(i + 1, 4), 16) - 0xd800) * 0x400 + parseInt(p.substr(i + 7, 4), 16) - 0xdc00 + 0x10000).toString(16) + '}';
