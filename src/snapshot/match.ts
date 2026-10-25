@@ -12,7 +12,7 @@
 
 import { inRange4, type Snapshot, type RangeSet, type RuleAction, type RuleRequest, type CompiledRule } from './parse.js';
 import { parseIp4, parseIp6Into } from './ipparse.js';
-import { pathForms, pathHit, prefixHit, type PathForms } from './path.js';
+import { pathForms, pathHit, prefixHit, withRegexBudget, type PathForms } from './path.js';
 
 export interface MatchInput {
   ip?: string | null;
@@ -162,11 +162,16 @@ export class Matcher {
       r.n4 = n4; r.has6 = has6;
       r.asn = input.asn ?? null; r.country = input.country ?? null; r.tlsx = input.tlsx ?? null;
       r.paths = paths; r.ua = input.ua ?? null; r.header = input.header ?? null;
-      for (const rule of S.rules) {              // the order IS the precedence (§A4): first match wins
-        let hit = true;
-        for (const cond of rule.conds) if (!cond(r)) { hit = false; break; }   // a plain loop: every() would allocate a closure per rule
-        if (hit) return ruleResult(rule, S.version);
-      }
+      // one synchronous walk under the request's regex work budget (camada-all-1oqz); no await inside, so it cannot leak across requests
+      const hitRule = withRegexBudget(() => {
+        for (const rule of S.rules) {              // the order IS the precedence (§A4): first match wins
+          let hit = true;
+          for (const cond of rule.conds) if (!cond(r)) { hit = false; break; }   // a plain loop: every() would allocate a closure per rule
+          if (hit) return rule;
+        }
+        return null;
+      });
+      if (hitRule) return ruleResult(hitRule, S.version);
     }
     const allowed = this.side(S.allow, input, n4, has6, paths, false);
     if (allowed) return { ...NONE, allowed: true, reason: allowed, version: S.version };
