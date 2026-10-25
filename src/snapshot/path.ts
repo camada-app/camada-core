@@ -207,12 +207,17 @@ export function withRegexBudget<T>(f: () => T): T {
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
   if (regexLeft <= 0) return onError;
   const w = WORK.get(re), L = v.length;
-  let c = 0;   // our pre-check's passes on this test
-  if (w?.pf) { pfPasses = 0; const ok = w.pf(v === foldV ? foldF : (foldF = foldCase(foldV = v))); c = pfPasses; if (!ok) { regexLeft -= c * L + REGEX_STATE_WORK; return false; } }
+  let c = 0, F = L;   // our pre-check's passes on this test, and the length of the folded value they scan (U+0130 folds to two code units)
+  if (w?.pf) {
+    const f = v === foldV ? foldF : (foldF = foldCase(foldV = v)); F = f.length; pfPasses = 0;
+    let ok: boolean | null; try { ok = w.pf(f); } catch { ok = null; }   // S4: a pre-check failure (its re2js match) answers onError like a re.test failure
+    c = pfPasses;
+    if (!ok) { regexLeft -= c * F + REGEX_STATE_WORK; return ok === null ? onError : false; }   // z8p7: a required literal is missing, so the regex cannot match
+  }
   const g0 = dfaGiveUps, b0 = dfaBuilt, s0 = dfaSteps, m0 = w?.d?.memBudget ?? 0;
   let hit: boolean;
   try { hit = re.test(v); } catch { hit = onError; }
-  if (w) regexLeft -= w.full || dfaGiveUps !== g0 ? c * L + (L + 1) * w.n : (c + w.re2k + 1) * L + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d.memBudget + dfaSteps - s0;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
+  if (w) regexLeft -= w.full || dfaGiveUps !== g0 ? c * F + (L + 1) * w.n : c * F + (w.re2k + 1) * L + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d.memBudget + dfaSteps - s0;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
   return hit;
 }
 
