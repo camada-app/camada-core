@@ -264,11 +264,12 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
   it('a CI path rule skips a value without its required literal, charged like CS', () => {
     const rs = Array.from({ length: 200 }, () => compileMatches(W256, true)!);
     expect(withRegexBudget(() => rs.map((re) => safeTest(re, PB, true)))).toEqual(Array(200).fill(false));   // none over (today 60 run, then over)
-    const v = '/' + 'b'.repeat(2046), want = Math.ceil(REQUEST_REGEX_WORK / (2047 + REGEX_STATE_WORK));
+    expect(foldedPrefilter(W256)!.scans).toBe(2);   // an AND of "." and an OR of literals: two passes, so a test is charged 2 lengths
+    const v = '/' + 'b'.repeat(2046), want = Math.ceil(REQUEST_REGEX_WORK / (2 * 2047 + REGEX_STATE_WORK));
     const ran = (re: { test(s: string): boolean }) => withRegexBudget(() => { let n = 0; for (let i = 0; i < 4000; i++) if (!safeTest(re, v, true)) n++; return n; });
     expect(ran(compileMatches(W256, true)!)).toBe(want);
     expect(ran(compileMatches(W256, false)!)).toBe(want);
-    expect(want).toBe(3974);
+    expect(want).toBe(2018);
   });
 
   it('round 3: wide CI rules do not spend a benign long path budget', () => {
@@ -332,10 +333,43 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
       expect(tw.allExact).toBe(true);
       const pf = foldedPrefilter(p);
       expect(pf).toBeInstanceOf(Function);
+      expect(pf!.scans).toBe(1);   // no 32-scan cap of ours: an OR of literals is one pass and the pre-check stays
       expect(pf!('/-.-.-')).toBe(false);
       expect(pf!(foldCase('/xx/A1/yy'))).toBe(true);
       const re = compileMatches(p, true)!;
       for (const v of ['/-.-.-', '/xx/A1/yy', '/A1', '/Q5', '', '/zzz']) expect(safeTest(re, v, true), `${n}: ${v}`).toBe(re.test(v));
+    }
+  });
+
+  it('z8p7 review r2: a pre-check is charged one pass per literal scan', () => {
+    const L = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let p = '', i = 0;
+    while (p.length < 190) { p += `(?:${L[i % 36]}${i < 36 ? 'q' : 'r'}|${L[(i + 1) % 36]}${i < 36 ? 'w' : 'x'})`; i += 2; }   // the second lap changes the suffix so the dropped group's literals occur nowhere else in V
+    p = p.slice(0, p.lastIndexOf('(?:'));
+    const groups = (p.match(/\(\?:/g) ?? []).length, k = groups;
+    expect(foldedPrefilter(p)!.scans).toBe(groups);
+    const lits = [...p.matchAll(/\(\?:(..)\|/g)].map((m) => m[1]!); lits.pop();
+    const al = 'abcdefghij', base = Array.from({ length: 2048 }, (_, j) => al[(j * 7) % 10]).join('');
+    const V = base.slice(0, 2048 - lits.join('').length) + lits.join('');
+    expect(V.length).toBe(2048);
+    expect(foldedPrefilter(p)!(foldCase(V))).toBe(false);   // a pre-check miss: every test costs exactly 2048 * k + 64
+    const re = compileMatches(p, true)!;
+    let tests = 0;
+    const t0 = performance.now();
+    withRegexBudget(() => { for (;;) { if (safeTest(re, V, 'X' as never) === ('X' as never)) break; tests++; } });
+    expect(tests).toBe(Math.ceil(REQUEST_REGEX_WORK / (2048 * k + REGEX_STATE_WORK)));
+    expect(performance.now() - t0).toBeLessThan(500);   // measured about 90 ms; before the fix 1.7 s
+  });
+
+  it('z8p7 review r2: a user-agent rule is charged re2js\' own prefilter scans', () => {
+    const scansOf = (p: string) => { const t = RE2JS.compile(p, 0).re2().prefilter as { type: number; allExact?: boolean; subs?: unknown[] }; const c = (x: typeof t): number => (x.type === 1 || x.allExact ? 1 : (x.subs as typeof t[] | undefined)?.reduce((a, y) => a + c(y), 0) ?? 0); return c(t); };
+    const miss = 'y'.repeat(2000);   // no literal: every test is a pre-check miss, L + 64
+    for (const [p, k] of [['(?:sqlmap|nikto)', 1], ['sqlmap.*nikto.*havij', 3]] as Array<[string, number]>) {
+      expect(scansOf(p)).toBe(k);
+      const re = compileMatches(p, false)!;
+      let n = 0;
+      withRegexBudget(() => { while (safeTest(re, miss, 'X' as never) !== ('X' as never)) n++; });
+      expect(n, p).toBe(Math.ceil(REQUEST_REGEX_WORK / (miss.length * k + REGEX_STATE_WORK)));
     }
   });
 

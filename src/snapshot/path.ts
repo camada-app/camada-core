@@ -135,6 +135,7 @@ export function jsToRe2(p: string): string {
 
 const NON_ASCII = /[^\x00-\x7f]/;
 export const foldCase = (v: string): string => v.toLowerCase().replaceAll('\u017f', 's');
+type Pf = (((v: string) => boolean) & { scans: number }) | null;
 type PfNode = { type?: unknown; str?: unknown; subs?: unknown; allExact?: unknown };
 function pfOf(x: PfNode | null | undefined): ((v: string) => boolean) | null {
   if (!x || typeof x.type !== 'number') return null;
@@ -148,10 +149,10 @@ function pfOf(x: PfNode | null | undefined): ((v: string) => boolean) | null {
   const d = any.re2().dfa; d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM;   // capped like every customer pattern (sl00)
   return (v) => any.test(v);
 }
-// one scan per literal, an OR of literals one pass: a tree past re2js's own MAX_SCANS (32) is no pre-check (the DFA runs, budgeted)
+// the passes over the value a prefilter tree costs: one per literal, one per OR of literals (re2js caps a tree at its MAX_SCANS, 32); safeTest charges each test that many L
 const scans = (x: PfNode | null | undefined): number => (x?.type === 1 || x?.allExact ? 1 : Array.isArray(x?.subs) ? (x.subs as PfNode[]).reduce((k, y) => k + scans(y), 0) : 0);
 /** A predicate over a case-folded value: true when it holds every literal the case-sensitive compile of `p` requires; null when there is no constraint (or re2js has no prefilter). */
-export function foldedPrefilter(p: string): ((v: string) => boolean) | null { try { const t = RE2JS.compile(jsToRe2(p), 0).re2().prefilter; return scans(t) <= 32 ? pfOf(t) : null; } catch { return null; } }
+export function foldedPrefilter(p: string): Pf { try { const t = RE2JS.compile(jsToRe2(p), 0).re2().prefilter, f = pfOf(t); return f && Object.assign(f, { scans: scans(t) }); } catch { return null; } }
 /** re2js' lazy DFA caches up to 8 MiB per pattern (200 wide rules held 1147 MiB); 64 KiB gives the same answers (a full cache is rebuilt or the NFA runs). */
 export const RE2_DFA_MAX_MEM = 65536;
 /** A customer `matches` pattern as a linear-time matcher; null when re2js refuses it (a stored lookaround, backreference or count over 1000): such a
@@ -160,9 +161,9 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
   let re: RE2JS | undefined;
   try { re = RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { /* fall through */ }
   if (re) {   // outside the try: a failure here must throw, not read as a refused pattern
-    const d = re.re2().dfa, clear = d.clearCache, match = d.match, step = d.step, n = re.re2().numberOfInstructions() + REGEX_STATE_WORK, pf = ci ? foldedPrefilter(p) : null;
+    const d = re.re2().dfa, clear = d.clearCache, match = d.match, step = d.step, n = re.re2().numberOfInstructions() + REGEX_STATE_WORK, pf = ci ? foldedPrefilter(p) : null, k = Math.max(1, ci ? pf?.scans ?? 0 : scans(re.re2().prefilter));   // k: the passes a pre-check makes, ours (path) or re2js's own (ua, header)
     if (typeof clear !== 'function' || typeof match !== 'function' || typeof step !== 'function' || typeof d.memBudget !== 'number' || typeof d.stateCount !== 'number') {
-      WORK.set(re, { n, d: null, full: true, pf });   // fail closed: re2js internals changed, so every test is charged the full worst case
+      WORK.set(re, { n, d: null, full: true, pf, k });   // fail closed: re2js internals changed, so every test is charged the full worst case
       return re;
     }
     d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM;
@@ -170,7 +171,7 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
     d.match = function (this: typeof d, ...a: Parameters<typeof d.match>) { const r = match.apply(this, a); if (r === null) dfaGiveUps++; return r; };   // null: the DFA gave up and the NFA runs the whole input
     // every transition computed (a table miss) scanned its source state, so it is charged the source's NFA-state count; one whose target was already cached (no new bytes) also closed over the target, so it is charged the target's count + REGEX_STEP_WORK (anchor 0 is RE2Flags.UNANCHORED)
     d.step = function (this: typeof d, s: Parameters<typeof d.step>[0], cls: number, rune: number, anchor: number) { const t = anchor === 0 ? s.next : s.nextAnchored, miss = t == null || t[cls] == null, c0 = this.stateCount, r = step.call(this, s, cls, rune, anchor); if (miss) dfaSteps += (s.nfaStates?.length ?? 0) + (this.stateCount === c0 ? (r?.nfaStates?.length ?? 0) + REGEX_STEP_WORK : 0); return r; };
-    WORK.set(re, { n, d, pf });
+    WORK.set(re, { n, d, pf, k });
     return re;
   }
   return null;   // rfyr: a pattern re2js refuses never matches (as in camada-go); no native RegExp runs
@@ -186,8 +187,7 @@ let regexLeft = Infinity;   // Infinity outside a request rule walk (entity plan
 export const REGEX_STEP_WORK = 256;
 let dfaBuilt = 0, dfaGiveUps = 0, dfaSteps = 0;
 let foldV = '', foldF = '';   // the last value safeTest folded: a walk tests each path form against every path rule, so it is folded once
-type Pf = ((v: string) => boolean) | null;
-const WORK = new WeakMap<object, { n: number; d: null; full: true; pf: Pf } | { n: number; d: { memBudget: number }; full?: undefined; pf: Pf }>();   // full: re2js internals missing, charge the worst case every test
+const WORK = new WeakMap<object, { n: number; d: null; full: true; pf: Pf; k: number } | { n: number; d: { memBudget: number }; full?: undefined; pf: Pf; k: number }>();   // full: re2js internals missing, charge the worst case every test
 
 /** Runs a request rule walk (synchronous: the budget is module state) under a fresh REQUEST_REGEX_WORK; nesting-safe. */
 export function withRegexBudget<T>(f: () => T): T {
@@ -204,12 +204,12 @@ export function withRegexBudget<T>(f: () => T): T {
  *  in compileMatches are missing, every test is charged the full worst case. */
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
   if (regexLeft <= 0) return onError;
-  const w = WORK.get(re);
-  if (w?.pf && !w.pf(v === foldV ? foldF : (foldF = foldCase(foldV = v)))) { regexLeft -= v.length + REGEX_STATE_WORK; return false; }
+  const w = WORK.get(re), L = w ? v.length * w.k : v.length;   // a pre-check pass per literal scan, then the DFA's one pass
+  if (w?.pf && !w.pf(v === foldV ? foldF : (foldF = foldCase(foldV = v)))) { regexLeft -= L + REGEX_STATE_WORK; return false; }
   const g0 = dfaGiveUps, b0 = dfaBuilt, s0 = dfaSteps, m0 = w?.d?.memBudget ?? 0;
   let hit: boolean;
   try { hit = re.test(v); } catch { hit = onError; }
-  if (w) regexLeft -= w.full || dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d.memBudget + dfaSteps - s0;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
+  if (w) regexLeft -= w.full || dfaGiveUps !== g0 ? (v.length + 1) * w.n : L + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d.memBudget + dfaSteps - s0;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
   return hit;
 }
 
