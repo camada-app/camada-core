@@ -116,7 +116,8 @@ export function jsToRe2(p: string): string {
       else if (n === 'x' && HEX2.test(p.slice(i + 1, i + 3))) { out += '\\x' + p.slice(i + 1, i + 3); i += 2; }
       else if (n === 'x') out += 'x';
       else if (n === 'c' && cls && /[0-9_]/.test(p[i + 1] ?? '')) out += '\\x' + (p.charCodeAt(++i) % 32).toString(16).padStart(2, '0');   // [\c_] is a control character in a class (Annex B)
-      else if (n === 'c') out += /[A-Za-z]/.test(p[i + 1] || '') ? '\\c' + p[++i] : '\\\\c';
+      else if (n === 'c' && /[A-Za-z]/.test(p[i + 1] || '')) out += '\\c' + p[++i];
+      else if (n === 'c') { out += '\\\\c'; if (cls) at = true; }   // a bare \c is a backslash then c: two atoms, so the c starts the next range
       else if (n === 'b' && cls) out += '\\x08';
       else if (n === 's') out += cls ? WS : '[' + WS + ']';
       else if (n === 'S' && !cls) out += '[^' + WS + ']';
