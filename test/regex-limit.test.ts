@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
-import { compileMatches, jsToRe2, MAX_MATCH_INPUT, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
+import { compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
 const REGEX_LIMIT_VECTORS_SHA256 = '79cd3686277fd9630592338a65d24e49f791aba5f1a182e7eef598eacae2fd24';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
@@ -21,7 +21,7 @@ const V = JSON.parse(raw.toString('utf8')) as {
   constants: Record<string, string | number>;
   over_limit: Array<{ id: string; rule: Rule; input: Record<string, Val>; hit: { linear: boolean } }>;
   linear_time: Array<{ id: string; rule: Rule; input: Record<string, Val>; hit: boolean; max_ms: number }>;
-  refused: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { native: boolean } }> }>;
+  refused: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { go: boolean } }> }>;
   refused_rule: { id: string; action: string; field: string };
   accepted: string[];
   translate: Array<[string, string]>;
@@ -38,6 +38,13 @@ const hits = (rule: Rule, input: Record<string, Val>): boolean => {
   const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules: [rule] }));
   return m.match(Object.fromEntries(Object.entries(input).map(([k, v]) => [k, val(v)])) as never).rule === rule.id;
 };
+
+const LT1 = V.linear_time.find((r) => r.id === 'LT1')!.rule.conds[0].v;
+const H1 = '/' + 'a'.repeat(2047), H3 = '/A/./' + 'a'.repeat(2043);   // 1 and 3 distinct path forms
+const mk = (action: string, f: string, v: string, i: number): Rule => ({ id: `cr_${action}${f}${i}`, action, conds: [{ f, op: 'matches', v }] });
+const many = (n: number, f: string, v: string) => Array.from({ length: n }, (_, i) => mk('block', f, v, i));
+const res = (rules: Rule[], input: { path?: string; ua?: string }) => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules })).match({ ip: '8.8.8.8', ...input } as never);
+const run = (rules: Rule[], input: { path?: string; ua?: string }) => res(rules, input).rule;
 
 describe('regex-limit vectors', () => {
   it('are the pinned bytes', () => {
@@ -62,9 +69,10 @@ describe('regex-limit vectors', () => {
   });
 
   const rr = V.refused_rule;
-  it.each(V.refused.flatMap((r) => r.cases.map((c, i) => [`${r.id}#${i} ${r.pattern}`, r, c] as const)))('refused %s falls back to native', (_l, r, c) => {
+  it.each(V.refused.flatMap((r) => r.cases.map((c, i) => [`${r.id}#${i} ${r.pattern}`, r, c] as const)))('refused %s never matches', (_l, r, c) => {
     expect(() => RE2JS.compile(jsToRe2(r.pattern))).toThrow();
-    expect(hits({ id: rr.id, action: rr.action, conds: [{ f: rr.field, op: 'matches', v: r.pattern }] }, { ip: '8.8.8.8', ua: c.ua })).toBe(c.hit.native);
+    expect(hits({ id: rr.id, action: rr.action, conds: [{ f: rr.field, op: 'matches', v: r.pattern }] }, { ip: '8.8.8.8', ua: c.ua })).toBe(c.hit.go);   // rfyr: as camada-go, a pattern re2js refuses never matches
+    expect(c.hit.go).toBe(false);
   });
 
   it.each(V.accepted.map((p) => [p] as const))('accepted %s compiles on re2js', (p) => {
@@ -72,13 +80,12 @@ describe('regex-limit vectors', () => {
     expect(compileMatches(p, false)).toBeInstanceOf(RE2JS);
   });
 
-  it('a - next to a class escape is refused (never translated); a stored pattern runs on the native RegExp', () => {
+  it('a - next to a class escape is refused (never translated); a stored pattern never matches (rfyr)', () => {
     for (const p of ['[\\s-z]', '[a-\\d]', '[\\s-a-b-e]', '[\\s-\\x41-z]']) {
       expect(() => jsToRe2(p), p).toThrow(SyntaxError);
       expect(() => RE2JS.compile(jsToRe2(p)), p).toThrow();
-      const re = compileMatches(p, false);
-      expect(re instanceof RegExp, p).toBe(true);
-      for (const t of ['a', 'b', 'c', 'e', 'z', 'A', '-', ' ', '5', '_']) expect(re!.test(t), `${p} ${t}`).toBe(new RegExp(p).test(t));
+      expect(compileMatches(p, false), p).toBeNull();
+      expect(compileMatches(p, true), p).toBeNull();
     }
     for (const p of ['[-\\sz]', '[\\s-]', '[a-z\\s]']) {
       expect(() => RE2JS.compile(jsToRe2(p)), p).not.toThrow();
@@ -94,15 +101,9 @@ describe('regex-limit vectors', () => {
 // camada-all-1oqz: a per-request regex work budget (mirrors edge-analyst blocklist.js).
 describe('1oqz: per-request regex work budget', () => {
   const UA_HIT = 4;   // the ua is one form: rules 0-3 run, rule 4 finds the budget spent
-  const LT1 = V.linear_time.find((r) => r.id === 'LT1')!.rule.conds[0].v;
   const LT2 = V.linear_time.find((r) => r.id === 'LT2')!.rule.conds[0].v;
-  const H1 = '/' + 'a'.repeat(2047), H3 = '/A/./' + 'a'.repeat(2043);   // 1 and 3 distinct path forms
   const P8 = '(?:a[^ ]{0,500}dQ|b[^ ]{0,500}kQ|c[^ ]{0,500}mQ|e[^ ]{0,500}pQ|f[^ ]{0,500}rQ|g[^ ]{0,500}tQ|h[^ ]{0,500}vQ|j[^ ]{0,500}xQ)';   // 8 branches of ~1000 instructions each, never gives up on a short path
   const UA_BENIGN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0';
-  const mk = (action: string, f: string, v: string, i: number): Rule => ({ id: `cr_${action}${f}${i}`, action, conds: [{ f, op: 'matches', v }] });
-  const many = (n: number, f: string, v: string) => Array.from({ length: n }, (_, i) => mk('block', f, v, i));
-  const run = (rules: Rule[], input: { path?: string; ua?: string }) =>
-    new Matcher(parseSnapshot(empty, { ...emptyMeta, rules })).match({ ip: '8.8.8.8', ...input } as never).rule;
 
   it('REQUEST_REGEX_WORK is 8388608 and a call costs 64', () => {
     expect(REQUEST_REGEX_WORK).toBe(8388608);
@@ -211,5 +212,44 @@ describe('1oqz: per-request regex work budget', () => {
     const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules: many(200, 'path', LT2) }));
     const ms = best(() => m.match({ ip: '8.8.8.8', path: '/A/./' + 'a'.repeat(95) }));
     expect(ms).toBeLessThan(500);   // bounded vs unbounded; loose for slow CI runners
+  }, 60_000);
+});
+
+// camada-all-rfyr: a stored pattern re2js refuses never matches (as in camada-go); no native RegExp runs.
+describe('rfyr: a pattern re2js refuses never matches', () => {
+  const RF = V.refused.map((r) => r.pattern);
+  const EXTRA = ['(?:a{99}|a{99}){12}z', '[\\s-z]', '[\\w-.]+@x', '(a)\\1', 'a{01001}'];
+  const REFUSED = '(?:a{99}|a{99}){12}z';
+
+  it.each([...RF, ...EXTRA].map((p) => [p] as const))('rfyr: %s compiles to null', (p) => {
+    expect(compileMatches(p, true)).toBeNull();
+    expect(compileMatches(p, false)).toBeNull();
+  });
+
+  it('rfyr: a refused skip rule does not exempt', () => {
+    const blk: Rule = { id: 'cr_blk', action: 'block', conds: [{ f: 'ip', op: 'is_not', v: '1.1.1.1' }] };
+    const r = res([mk('skip', 'ua', V.refused[0].pattern, 0), blk], { ua: 'Mozilla/5.0 Firefox/130.0' });
+    expect(r.allowed).toBe(false);
+    expect(r.rule).toBe('cr_blk');
+  });
+
+  it('rfyr: a{01001} never matches a{1001}', () => {
+    expect(hits(mk('block', 'ua', 'a{01001}', 0), { ip: '8.8.8.8', ua: 'a'.repeat(1001) })).toBe(false);
+  });
+
+  it('rfyr: N stored refused rules spend no regex work', () => {
+    const refused = Array.from({ length: 200 }, () => pathPred('matches', [REFUSED]));
+    const lt1 = Array.from({ length: 5 }, () => compileMatches(LT1, true)!);
+    const out = withRegexBudget(() => [...refused.map((p) => p(H1, true)), ...lt1.map((re) => safeTest(re, H1, true))]);
+    expect(out).toEqual([...Array(200).fill(false), false, false, false, false, true]);   // 4 run, then over: the same as with no refused rules
+  }, 30_000);
+
+  it('rfyr: 200 refused + 200 LT1 path rules cost one bounded walk', () => {
+    const rules = [...many(200, 'path', REFUSED), ...many(200, 'path', LT1)].map((r, i) => ({ ...r, id: `cr_${i}` }));
+    const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules }));
+    let rule: string | undefined;
+    const ms = best(() => { rule = m.match({ ip: '8.8.8.8', path: H3 }).rule; });
+    expect(rule).toBe(rules[201].id);
+    expect(ms).toBeLessThan(500);   // measured 114-117 ms; today minutes
   }, 60_000);
 });

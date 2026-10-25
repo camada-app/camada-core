@@ -135,12 +135,12 @@ export function jsToRe2(p: string): string {
 
 /** re2js' lazy DFA caches up to 8 MiB per pattern (200 wide rules held 1147 MiB); 64 KiB gives the same answers (a full cache is rebuilt or the NFA runs). */
 export const RE2_DFA_MAX_MEM = 65536;
-/** A customer `matches` pattern as a linear-time matcher; a stored pattern re2js refuses (a legacy lookaround) falls back to
- *  the native RegExp, null when neither compiles. */
+/** A customer `matches` pattern as a linear-time matcher; null when re2js refuses it (a stored lookaround, backreference or count over 1000): such a
+ *  pattern never matches, as in camada-go, and no native RegExp ever runs (camada-all-rfyr). */
 export function compileMatches(p: string, ci: boolean): { test(s: string): boolean } | null {
   let re: RE2JS | undefined;
   try { re = RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { /* fall through */ }
-  if (re) {   // outside the try: a failure here must throw, not fall back to native
+  if (re) {   // outside the try: a failure here must throw, not be read as a refusal
     const d = re.re2().dfa, clear = d.clearCache, match = d.match, step = d.step, n = re.re2().numberOfInstructions() + REGEX_STATE_WORK;
     if (typeof clear !== 'function' || typeof match !== 'function' || typeof step !== 'function' || typeof d.memBudget !== 'number' || typeof d.stateCount !== 'number') {
       WORK.set(re, { n, d: null, full: true });   // fail closed: re2js internals changed, so every test is charged the full worst case
@@ -154,7 +154,7 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
     WORK.set(re, { n, d });
     return re;
   }
-  try { const nre = new RegExp(p, ci ? 'i' : ''); WORK.set(nre, { n: REGEX_STATE_WORK, d: null }); return nre; } catch { return null; }
+  return null;   // rfyr: a pattern re2js refuses never matches (as in camada-go); no native RegExp runs
 }
 
 /** Per-request regex work (camada-all-1oqz), mirrors edge-analyst blocklist.js: a test of a value of length L through n instructions
@@ -178,14 +178,14 @@ export function withRegexBudget<T>(f: () => T): T {
 /** re.test, except that a match-time engine failure (a RangeError) answers `onError`, like an over-cap value: deny for block/challenge/warn, miss for skip (contract regex-cap-sdk S4).
  *  Inside withRegexBudget a test runs while budget is left (regexLeft > 0), else it answers `onError` unrun. It is charged the full worst case (L+1)(n+64) when re2js's DFA
  *  gave up (the NFA then ran the whole input), else L+64 plus the DFA cache bytes built during the test (re2js's own per-state accounting, memBudget) plus, per DFA transition
- *  computed (real CPU), its source state's NFA-state count, and for one whose target was already cached (no new bytes) also its target's count + REGEX_STEP_WORK. The native fallback is charged L+64; if the re2js internals wrapped
+ *  computed (real CPU), its source state's NFA-state count, and for one whose target was already cached (no new bytes) also its target's count + REGEX_STEP_WORK. If the re2js internals wrapped
  *  in compileMatches are missing, every test is charged the full worst case. */
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
   if (regexLeft <= 0) return onError;
   const w = WORK.get(re), g0 = dfaGiveUps, b0 = dfaBuilt, s0 = dfaSteps, m0 = w?.d?.memBudget ?? 0;
   let hit: boolean;
   try { hit = re.test(v); } catch { hit = onError; }
-  if (w) regexLeft -= w.full || dfaGiveUps !== g0 ? (v.length + 1) * w.n : !w.d ? v.length + REGEX_STATE_WORK : v.length + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d.memBudget + dfaSteps - s0;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
+  if (w) regexLeft -= w.full || dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d!.memBudget + dfaSteps - s0;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
   return hit;
 }
 
