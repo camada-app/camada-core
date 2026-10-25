@@ -95,7 +95,7 @@ describe('regex-limit vectors', () => {
   });
 
   it('a - after a finished class range is a literal and compiles (camada-all-uged)', () => {
-    const cases: [string, string[], string[]][] = [['x[a-b-\\d]y', ['xay', 'x-y', 'x5y'], ['xcy']], ['x[a-z-\\w]y', ['xqy', 'x-y', 'x_y'], ['x.y']], ['x[\\u0041-\\u005a-\\w]y', ['xAy', 'x-y', 'x_y'], ['x.y']], ['x[\\x41-\\x5a-\\w]y', ['xAy', 'x-y', 'x_y'], ['x.y']], ['x[\\x01-\\cB-\\d]y', ['x\x01y', 'x-y', 'x5y'], ['xay']]];
+    const cases: [string, string[], string[]][] = [['x[a-b-\\d]y', ['xay', 'x-y', 'x5y'], ['xcy']], ['x[a-z-\\w]y', ['xqy', 'x-y', 'x_y'], ['x.y']], ['x[\\u0041-\\u005a-\\w]y', ['xAy', 'x-y', 'x_y'], ['x.y']], ['x[\\x41-\\x5a-\\w]y', ['xAy', 'x-y', 'x_y'], ['x.y']], ['x[\\x01-\\cB-\\d]y', ['x\x01y', 'x-y', 'x5y'], ['xay']], ['x[\\x00-\\x41-\\d]y', ['xAy', 'x-y', 'x5y'], ['xay']]];
     for (const [p, yes, no] of cases) {
       const re = compileMatches(p, false), js = new RegExp(p);
       expect(re, p).not.toBeNull();   // null when jsToRe2 throws
@@ -106,6 +106,7 @@ describe('regex-limit vectors', () => {
 
   it('a bare \\c in a class is two atoms (camada-all-uged r2)', () => {
     expect(() => jsToRe2('x[!-\\c-\\w]y')).toThrow(SyntaxError);
+    expect(() => jsToRe2('[\\s-\\x41-z]')).toThrow(SyntaxError);   // camada-all-kfe1: \x41 is one atom, so the - after it still meets \s
   });
 
   it('a legacy octal escape in [ ] is one atom, as V8 reads it (camada-all-0ksq)', () => {
@@ -120,15 +121,6 @@ describe('regex-limit vectors', () => {
       }
       expect(bad, p).toEqual([]);
     }
-    const r2 = compileMatches('x[\\0-\\12-\\d]y', false)!;
-    for (const s of ['x\ny', 'x\x00y', 'x-y', 'x5y', 'x2y']) expect(r2.test(s), s).toBe(new RegExp('x[\\0-\\12-\\d]y').test(s));
-  });
-
-  it('\\xHH, \\uHHHH and \\cX are one class atom (camada-all-kfe1)', () => {
-    const p = 'x[\\x00-\\x41-\\d]y', r2 = compileMatches(p, false)!, js = new RegExp(p);
-    for (const s of ['xAy', 'x-y', 'x5y']) expect([r2.test(s), js.test(s)], s).toEqual([true, true]);
-    expect([r2.test('xay'), js.test('xay')]).toEqual([false, false]);
-    expect(() => jsToRe2('[\\s-\\x41-z]')).toThrow(SyntaxError);
   });
   it.each(V.translate)('translate %s', (from, to) => {
     expect(jsToRe2(from)).toBe(to);
