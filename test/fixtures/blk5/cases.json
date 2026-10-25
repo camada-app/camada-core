@@ -2748,6 +2748,51 @@
           "reason": "rule",
           "rule": "cr_00000000000e"
         }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "ua": "zerobot/aabbb"
+        },
+        "expect": {
+          "block": true,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": "block",
+          "reason": "rule",
+          "rule": "cr_000000000026"
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "ua": "zerobot/a{02}b{0,03}"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
+      },
+      {
+        "input": {
+          "ip": "8.8.8.8",
+          "ua": "zerobot/aabbbb"
+        },
+        "expect": {
+          "block": false,
+          "challenge": false,
+          "allowed": false,
+          "warn": false,
+          "action": null,
+          "reason": null,
+          "rule": null
+        }
       }
     ],
     "empty": [
