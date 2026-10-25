@@ -99,12 +99,12 @@ const HEX2 = /^[0-9a-fA-F]{2}/;
  *  test vectors' `translate` rows pin the output; edge-analyst blocklist.js carries the same function. */
 const BRACE = /\{(\d+)(,(\d*))?\}/y;
 export function jsToRe2(p: string): string {
-  let out = '', cls = false, ce = false, at = false, m: RegExpExecArray | null;
+  let out = '', cls = false, ce = false, at = false, rng = false, m: RegExpExecArray | null;
   for (let i = 0; i < p.length; i++) {
     const c = p[i];
     if (c === '\\' && i + 1 < p.length) {
       const n = p[++i];
-      if (cls) { ce = 'sSdDwW'.includes(n); at = true; }   // ce: the last atom in this class is \s \d \w or the like
+      if (cls) { ce = 'sSdDwW'.includes(n); at = !rng; rng = false; }   // ce: the last atom in this class is \s \d \w or the like; rng: a range's low end was just read, so its high end cannot start another range
       if ('AzQEpPa'.includes(n) || (n === 'B' && cls)) out += n;   // JS reads the bare letter (RE2: an anchor, quote or class); [\B] is a literal B
       else if (n === 'u' && !cls && SURR.test(p.slice(i + 1, i + 11))) {        // \uD83D\uDE00: how a non-u regex writes an astral character
         out += '\\x{' + ((parseInt(p.substr(i + 1, 4), 16) - 0xd800) * 0x400 + parseInt(p.substr(i + 7, 4), 16) - 0xdc00 + 0x10000).toString(16) + '}';
@@ -121,14 +121,16 @@ export function jsToRe2(p: string): string {
     } else if (cls) {
       if (c === ']') cls = false;
       else {
-        if (c === '-' && at && p[i + 1] !== ']' && (ce || /^\\[sSdDwW]/.test(p.slice(i + 1, i + 3)))) throw new SyntaxError('a - next to \\s, \\d or \\w inside [ ]');   // JS reads it as a literal -, RE2 as a range: refuse, never emulate
-        ce = false; at = true;
+        if (c === '-' && at && p[i + 1] !== ']') {   // a range operator (not an atom); a - after a finished range, as in [a-b-\d], is a literal
+          if (ce || /^\\[sSdDwW]/.test(p.slice(i + 1, i + 3))) throw new SyntaxError('a - next to \\s, \\d or \\w inside [ ]');   // JS reads it as a literal -, RE2 as a range: refuse, never emulate
+          rng = true; at = false;
+        } else { ce = false; at = !rng; rng = false; }
       }
       out += c === '[' ? '\\[' : c;   // camada-all-07c7: JS reads a [ inside a class as text, RE2 reads [:alpha:] as a POSIX class
     } else if (c === '[') {
       out += c;
       if (p[i + 1] === '^') out += p[++i];
-      cls = true; ce = at = false;
+      cls = true; ce = at = rng = false;
     }
     else if (c === '{' && (BRACE.lastIndex = i, m = BRACE.exec(p))) { out += m[0].replace(/\b0+(?=\d)/g, ''); i += m[0].length - 1; }   // a{02} is a{2} in JS but RE2 reads the text: strip leading zeros as text (never Number()), skip the brace
     else out += c === '.' ? '[^\\n\\r\\x{2028}\\x{2029}]' : c;

@@ -93,6 +93,17 @@ describe('regex-limit vectors', () => {
     }
   });
 
+  it('a - after a finished class range is a literal and compiles (camada-all-uged)', () => {
+    const cases: [string, string[], string[]][] = [['x[a-b-\\d]y', ['xay', 'x-y', 'x5y'], ['xcy']], ['x[a-z-\\w]y', ['xqy', 'x-y', 'x_y'], ['x.y']]];
+    for (const [p, yes, no] of cases) {
+      expect(() => jsToRe2(p), p).not.toThrow();
+      const re = compileMatches(p, false)!;
+      expect(re, p).not.toBeNull();
+      for (const s of yes) expect([re.test(s), new RegExp(p).test(s)], s).toEqual([true, true]);
+      for (const s of no) expect([re.test(s), new RegExp(p).test(s)], s).toEqual([false, false]);
+    }
+  });
+
   it.each(V.translate)('translate %s', (from, to) => {
     expect(jsToRe2(from)).toBe(to);
   });
