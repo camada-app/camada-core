@@ -198,9 +198,9 @@ export function withRegexBudget<T>(f: () => T): T {
 
 /** re.test, except that a match-time engine failure (a RangeError) answers `onError`, like an over-cap value: deny for block/challenge/warn, miss for skip (contract regex-cap-sdk S4).
  *  Inside withRegexBudget a test runs while budget is left (regexLeft > 0), else it answers `onError` unrun. It is charged the full worst case (L+1)(n+64) when re2js's DFA
- *  gave up (the NFA then ran the whole input), else L+64 plus the DFA cache bytes built during the test (re2js's own per-state accounting, memBudget) plus, per DFA transition
+ *  gave up (the NFA then ran the whole input), else kL+64 (k: the passes its literal pre-check makes over the value, ours on a path rule or re2js's own, at least 1) plus the DFA cache bytes built during the test (re2js's own per-state accounting, memBudget) plus, per DFA transition
  *  computed (real CPU), its source state's NFA-state count, and for one whose target was already cached (no new bytes) also its target's count + REGEX_STEP_WORK. A path (case-insensitive) test whose value, case-folded (foldCase), lacks a literal the pattern requires (re2js's own
- *  prefilter, which CASE_INSENSITIVE turns off) answers a miss unrun, charged L+64 (camada-all-z8p7). If the re2js internals wrapped
+ *  prefilter, which CASE_INSENSITIVE turns off) answers a miss unrun, charged kL+64 (camada-all-z8p7). If the re2js internals wrapped
  *  in compileMatches are missing, every test is charged the full worst case. */
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
   if (regexLeft <= 0) return onError;
