@@ -392,6 +392,17 @@
       ]
     },
     {
+      "id": "cr_000000000026",
+      "action": "block",
+      "conds": [
+        {
+          "f": "ua",
+          "op": "matches",
+          "v": "^zerobot/a{02}b{0,03}$"
+        }
+      ]
+    },
+    {
       "id": "cr_000000000010",
       "action": "block",
       "conds": [

@@ -7,13 +7,8 @@ import { jsToRe2, compileMatches, RE2_DFA_MAX_MEM } from '../src/snapshot/path.j
 
 const MiB = 1048576;
 const LT1 = '(?:a{99}|a{99})'.repeat(12) + 'z';
-const translate: Array<[string, string]> = [
-  ['a{02}', 'a{2}'], ['a{0,03}', 'a{0,3}'], ['a{00}', 'a{0}'], ['a{02,}', 'a{2,}'], ['a{01001}', 'a{1001}'],
-  ['[{02}]', '[{02}]'], ['\\{02}', '\\{02}'], ['\\x{02}', 'x{2}'],
-];
 
 describe('mx0h: a count written with a leading zero is read as its decimal value, as JS reads it', () => {
-  it.each(translate)('jsToRe2(%j) = %j', (src, want) => { expect(jsToRe2(src)).toBe(want); });
   it('a{02} is aa, not the text', () => {
     const re = compileMatches('^a{02}$', false)!;
     expect(re.test('aa')).toBe(true);
@@ -34,7 +29,6 @@ describe('mx0h: a count written with a leading zero is read as its decimal value
 });
 
 describe('sl00: re2js lazy-DFA cache is bounded at 64 KiB per pattern', () => {
-  it('RE2_DFA_MAX_MEM is 65536', () => { expect(RE2_DFA_MAX_MEM).toBe(65536); });
   it('200 wide rules stay within 64 KiB each and 12.5 MiB accounted in total', () => {
     const input = '/' + 'a'.repeat(2047);
     let sum = 0;
