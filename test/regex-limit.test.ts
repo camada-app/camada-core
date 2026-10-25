@@ -82,7 +82,7 @@ describe('regex-limit vectors', () => {
   });
 
   it('a - next to a class escape is refused (never translated); a stored pattern never matches (rfyr)', () => {
-    for (const p of ['[\\s-z]', '[a-\\d]', '[\\s-a-b-e]', '[\\s-\\x41-z]']) {
+    for (const p of V.translate_refused) {
       expect(() => jsToRe2(p), p).toThrow(SyntaxError);
       expect(() => RE2JS.compile(jsToRe2(p)), p).toThrow();
       expect(compileMatches(p, false), p).toBeNull();
@@ -110,14 +110,6 @@ describe('regex-limit vectors', () => {
 
   it.each(V.translate)('translate %s', (from, to) => {
     expect(jsToRe2(from)).toBe(to);
-  });
-
-  it('translate_refused rows throw SyntaxError and compileMatches is null (camada-all-4s9z)', () => {
-    for (const p of V.translate_refused) {
-      expect(() => jsToRe2(p), p).toThrow(SyntaxError);
-      expect(compileMatches(p, false), p).toBeNull();
-      expect(compileMatches(p, true), p).toBeNull();
-    }
   });
 });
 
