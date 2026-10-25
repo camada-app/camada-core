@@ -91,6 +91,7 @@ export const pathHit = (pred: PathPred, forms: PathForms, deny: boolean): boolea
     : pred(forms[1], false) && (forms[2] === forms[1] || pred(forms[2], false));
 
 const WS = '\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}';   // JS \s
+const NOT_WS = '\\x00-\\x08\\x0e-\\x1f\\x21-\\x9f\\x{a1}-\\x{167f}\\x{1681}-\\x{1fff}\\x{200b}-\\x{2027}\\x{202a}-\\x{202e}\\x{2030}-\\x{205e}\\x{2060}-\\x{2fff}\\x{3001}-\\x{fefe}\\x{ff00}-\\x{10ffff}';   // JS \S: the complement of the set above, for inside [ ]
 const SURR = /^[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}/;
 const HEX4 = /^[0-9a-fA-F]{4}/;
 const HEX2 = /^[0-9a-fA-F]{2}/;
@@ -116,7 +117,7 @@ export function jsToRe2(p: string): string {
       else if (n === 'c') out += /[A-Za-z]/.test(p[i + 1] || '') ? '\\c' : '\\\\c';
       else if (n === 'b' && cls) out += '\\x08';
       else if (n === 's') out += cls ? WS : '[' + WS + ']';
-      else if (n === 'S' && !cls) out += '[^' + WS + ']';
+      else if (n === 'S') out += cls ? NOT_WS : '[^' + WS + ']';
       else out += c + n;
     } else if (cls) {
       if (c === ']') cls = false;
