@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher, type SnapshotRuleMeta, type SnapshotCondMeta } from '../src/index.js';
 
 const raw = readFileSync(new URL('./fixtures/blk3/v3-basic.bin', import.meta.url));
@@ -151,27 +152,36 @@ describe('rule compilation', () => {
   // contract regex-cap-sdk S4: a regex that throws while testing answers like an over-cap value.
   describe('a regex that throws at match time (S4)', () => {
     afterEach(() => vi.restoreAllMocks());
-    // A lookaround is refused by re2js, so the native fallback runs it and only that pattern throws; the engine's own regexes (path canonicalisation) still run.
+    // re2js never throws at match time, so force it: a 'boom' pattern (a re2js pattern; the inputs carry the literal, or the path pre-check would skip the test) makes RE2JS.prototype.test throw. The engine's own regexes (path canonicalisation) are native and still run.
     const throwing = () => {
-      const real = RegExp.prototype.test;
-      vi.spyOn(RegExp.prototype, 'test').mockImplementation(function (this: RegExp, v: string) {
-        if (this.source === '(?=x)x') throw new RangeError('Maximum call stack size exceeded');
+      const real = RE2JS.prototype.test;
+      vi.spyOn(RE2JS.prototype, 'test').mockImplementation(function (this: RE2JS, v: Parameters<RE2JS['test']>[0]) {
+        if (this.pattern() === 'boom') throw new RangeError('Maximum call stack size exceeded');
         return real.call(this, v);
       });
     };
     const skip = (conds: SnapshotCondMeta[]): SnapshotRuleMeta => ({ id: 'cr_skip', action: 'skip', conds });
 
     it.each(['ua', 'path'])('hits a deny rule on %s', (f) => {
-      const m = withRules([block([{ f, op: 'matches', v: '(?=x)x' }])]);
+      const m = withRules([block([{ f, op: 'matches', v: 'boom' }])]);
       throwing();
-      expect(m.match({ ip: '8.8.8.8', ua: 'x', path: '/x' }).block).toBe(true);
+      expect(m.match({ ip: '8.8.8.8', ua: 'boom', path: '/boom' }).block).toBe(true);
     });
 
     it.each(['ua', 'path'])('misses a skip rule on %s', (f) => {
-      const m = withRules([skip([{ f, op: 'matches', v: '(?=x)x' }]), block([{ f: 'ip', op: 'is_not', v: '1.1.1.1' }], 'cr_after')]);
+      const m = withRules([skip([{ f, op: 'matches', v: 'boom' }]), block([{ f: 'ip', op: 'is_not', v: '1.1.1.1' }], 'cr_after')]);
       throwing();
-      const r = m.match({ ip: '8.8.8.8', ua: 'x', path: '/x' });
+      const r = m.match({ ip: '8.8.8.8', ua: 'boom', path: '/boom' });
       expect(r.allowed).toBe(false);
+    });
+
+    it('hits a deny rule and misses a skip rule on a header', () => {
+      const h = { ip: '8.8.8.8', header: (n: string) => (n === 'x-h' ? 'boom' : null) };
+      const cond = [{ f: 'header', name: 'x-h', op: 'matches', v: 'boom' }];
+      const deny = withRules([block(cond)]), sk = withRules([skip(cond), block([{ f: 'ip', op: 'is_not', v: '1.1.1.1' }], 'cr_after')]);
+      throwing();
+      expect(deny.match(h).block).toBe(true);
+      expect(sk.match(h).allowed).toBe(false);
     });
   });
 

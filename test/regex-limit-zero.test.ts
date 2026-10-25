@@ -19,11 +19,9 @@ describe('mx0h: a count written with a leading zero is read as its decimal value
     expect(compileMatches('^a{00}b$', false)!.test('b')).toBe(true);
     expect(compileMatches('^a{02,}$', false)!.test('aaaa')).toBe(true);
   });
-  it('a{01001} is refused by re2js, so it falls back to the native RegExp', () => {
-    const re = compileMatches('a{01001}', false)!;
-    expect(re).toBeInstanceOf(RegExp);
-    expect(re.test('a'.repeat(1001))).toBe(true);
-    expect(re.test('a')).toBe(false);
+  it('a{01001} is a{1001}, which re2js refuses, so it never matches', () => {
+    expect(compileMatches('a{01001}', false)).toBeNull();
+    expect(compileMatches('a{01001}', true)).toBeNull();
     expect(RE2JS.compile.bind(RE2JS, 'a{1001}')).toThrow();
   });
 });
