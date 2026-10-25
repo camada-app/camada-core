@@ -122,7 +122,7 @@ export function jsToRe2(p: string): string {
       else if (n === 'b' && cls) out += '\\x08';
       else if (n === 's') out += cls ? WS : '[' + WS + ']';
       else if (n === 'S') out += cls ? NOT_WS : '[^' + WS + ']';
-      else if (cls && n >= '0' && n <= '7') {   // a legacy octal escape is one atom: V8 reads up to 3 digits after 0-3, 2 after 4-7 (Annex B); RE2 would read a third after 4-7, so \400 is written \040 then 0
+      else if (n >= '0' && n <= '7') {   // a legacy octal escape (in or out of [ ]) is one atom: V8 reads up to 3 digits after 0-3, 2 after 4-7 (Annex B); RE2 would read a third after 4-7, so \400 is written \0400 (\040 then 0)
         const d = p.slice(i, i + (n <= '3' ? 3 : 2)).match(/^[0-7]+/)![0];
         out += (d.length === 2 && n >= '4' && /[0-7]/.test(p[i + 2] ?? '') ? '\\0' : '\\') + d; i += d.length - 1;
       }
