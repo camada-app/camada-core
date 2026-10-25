@@ -18,7 +18,7 @@
 // The version byte is advisory: sections 10-15 are read whenever they are present.
 // Every path value is canonicalised once here (./path.ts, contracts §D3 "Path matching").
 
-import { canonPath, compileMatches, CTL_ANY, CTL_G, dirKey, MAX_MATCH_INPUT, pathHit, pathPred, type PathForms } from './path.js';
+import { canonPath, compileMatches, CTL_ANY, CTL_G, dirKey, MAX_MATCH_INPUT, pathHit, pathPred, safeTest, type PathForms } from './path.js';
 
 /** The non-IP half of a v4 side list (allow or challenge). */
 export interface SnapshotSetMeta {
@@ -198,10 +198,7 @@ function compileCond(c: SnapshotCondMeta, sets: Array<[Uint32Array, Uint32Array]
   if (c.op === 'matches') {
     const re = compileMatches(values[0], false);   // a pattern neither engine compiles never matches, and never throws
     const strip = c.f === 'ua' || c.f === 'header';   // contract regex-cap-sdk S5: a value with controls is tested raw AND stripped (deny), never exempts (skip)
-    const f = (v: string): boolean => {
-      if (v.length > MAX_MATCH_INPUT) return deny;   // S1: over the cap the regex never runs
-      try { return re!.test(v); } catch { return deny; }   // S4: a match-time failure (RangeError) answers like over-cap
-    };
+    const f = (v: string): boolean => v.length > MAX_MATCH_INPUT ? deny : safeTest(re!, v, deny);   // S1: over the cap the regex never runs; S4: a match-time failure (RangeError) or an unaffordable test answers like over-cap
     return (r) => {
       const v = read(r);
       if (v === null || !re) return false;
