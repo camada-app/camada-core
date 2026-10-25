@@ -303,7 +303,7 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
 
   it('the pre-check never changes an answer (2000 seeded patterns x 6 values)', () => {
     let seed = 20261024;
-    const rnd = (n: number) => (seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) % n;
+    const rnd = (n: number) => ((seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) >>> 16) % n;
     const pick = <T,>(a: T[]) => a[rnd(a.length)];
     const LIT = ['php', 'Admin', 'wp', 'env', 'secret', 'kelvin', 'a', 'b', 'Z', 's', 'k', 'x1', 'sql', 'é'];
     const atom = (): string => pick([() => pick(LIT), () => pick(LIT), () => '[^/]{2,5}', () => '.{0,4}', () => '[a-c]', () => '\\.', () => '(?:' + pick(LIT) + '|' + pick(LIT) + ')', () => pick(LIT) + '?', () => '[^a-z]', () => '\\W', () => '[A-Za-z]+'])();
@@ -320,17 +320,23 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
     expect(performance.now() - t0).toBeLessThan(2000);
   });
 
-  it('a prefilter of more than 32 literals gets no pre-check (re2js MAX_SCANS)', () => {
+  it('z8p7: an OR of literals is one pre-check pass, however wide', () => {
     const D = '0123456789abcdefghijklmnopqrstuvwxyz';   // scattered first characters, so re2js does not factor the alternation into a shared prefix
     const alt = (n: number) => '(?:' + Array.from({ length: n }, (_, i) => D[i % 36] + D[(i * 7 + 3) % 36] + (i >= 36 ? 'z' : '')).join('|') + ')';
     const leaves = (x: { type: number; subs?: unknown[] }): number => (x.type === 1 ? 1 : (x.subs as Array<{ type: number }> ?? []).reduce((k, y) => k + leaves(y as never), 0));
-    const wide = alt(40), edge = alt(32);
-    const tw = RE2JS.compile(wide, 0).re2().prefilter, te = RE2JS.compile(edge, 0).re2().prefilter;
-    expect(tw.type).toBe(3);   // OR
-    expect(leaves(tw)).toBeGreaterThan(32);
-    expect(leaves(te)).toBe(32);
-    expect(foldedPrefilter(wide)).toBeNull();
-    expect(foldedPrefilter(edge)).not.toBeNull();
+    for (const n of [32, 40]) {
+      const p = alt(n);
+      const tw = RE2JS.compile(p, 0).re2().prefilter;
+      expect(tw.type).toBe(3);   // OR
+      expect(leaves(tw)).toBe(n);
+      expect(tw.allExact).toBe(true);
+      const pf = foldedPrefilter(p);
+      expect(pf).toBeInstanceOf(Function);
+      expect(pf!('/-.-.-')).toBe(false);
+      expect(pf!(foldCase('/xx/A1/yy'))).toBe(true);
+      const re = compileMatches(p, true)!;
+      for (const v of ['/-.-.-', '/xx/A1/yy', '/A1', '/Q5', '', '/zzz']) expect(safeTest(re, v, true), `${n}: ${v}`).toBe(re.test(v));
+    }
   });
 
   it('tripwire: re2js prefilter internals', () => {
