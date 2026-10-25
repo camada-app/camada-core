@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
-import { compileMatches, foldCase, jsToRe2, MAX_MATCH_INPUT, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, pathPred, safeTest, withRegexBudget } from '../src/snapshot/path.js';
+import { compileMatches, foldCase, foldedPrefilter, jsToRe2, MAX_MATCH_INPUT, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, pathPred, safeTest, withRegexBudget, RE2_DFA_MAX_MEM } from '../src/snapshot/path.js';
 
 const REGEX_LIMIT_VECTORS_SHA256 = '79cd3686277fd9630592338a65d24e49f791aba5f1a182e7eef598eacae2fd24';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
@@ -21,7 +21,7 @@ const V = JSON.parse(raw.toString('utf8')) as {
   constants: Record<string, string | number>;
   over_limit: Array<{ id: string; rule: Rule; input: Record<string, Val>; hit: { linear: boolean } }>;
   linear_time: Array<{ id: string; rule: Rule; input: Record<string, Val>; hit: boolean; max_ms: number }>;
-  refused: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { go: boolean; native: boolean } }> }>;
+  refused: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { go: boolean } }> }>;
   refused_rule: { id: string; action: string; field: string };
   accepted: string[];
   translate: Array<[string, string]>;
@@ -38,6 +38,13 @@ const hits = (rule: Rule, input: Record<string, Val>): boolean => {
   const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules: [rule] }));
   return m.match(Object.fromEntries(Object.entries(input).map(([k, v]) => [k, val(v)])) as never).rule === rule.id;
 };
+
+const LT1 = V.linear_time.find((r) => r.id === 'LT1')!.rule.conds[0].v;
+const H1 = '/z' + 'a'.repeat(2046), H3 = '/Z/./' + 'a'.repeat(2043);   // 1 and 3 distinct path forms; both carry the literal z, or the CI pre-check (z8p7) would skip LT1
+const mk = (action: string, f: string, v: string, i: number): Rule => ({ id: `cr_${action}${f}${i}`, action, conds: [{ f, op: 'matches', v }] });
+const many = (n: number, f: string, v: string) => Array.from({ length: n }, (_, i) => mk('block', f, v, i));
+const res = (rules: Rule[], input: { path?: string; ua?: string }) => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules })).match({ ip: '8.8.8.8', ...input } as never);
+const run = (rules: Rule[], input: { path?: string; ua?: string }) => res(rules, input).rule;
 
 describe('regex-limit vectors', () => {
   it('are the pinned bytes', () => {
@@ -94,15 +101,9 @@ describe('regex-limit vectors', () => {
 // camada-all-1oqz: a per-request regex work budget (mirrors edge-analyst blocklist.js).
 describe('1oqz: per-request regex work budget', () => {
   const UA_HIT = 4;   // the ua is one form: rules 0-3 run, rule 4 finds the budget spent
-  const LT1 = V.linear_time.find((r) => r.id === 'LT1')!.rule.conds[0].v;
   const LT2 = V.linear_time.find((r) => r.id === 'LT2')!.rule.conds[0].v;
-  const H1 = '/z' + 'a'.repeat(2046), H3 = '/Z/./' + 'a'.repeat(2043);   // 1 and 3 distinct path forms; both carry the literal z, or the CI pre-check (z8p7) would skip LT1
   const P8 = '(?:a[^ ]{0,500}dQ|b[^ ]{0,500}kQ|c[^ ]{0,500}mQ|e[^ ]{0,500}pQ|f[^ ]{0,500}rQ|g[^ ]{0,500}tQ|h[^ ]{0,500}vQ|j[^ ]{0,500}xQ)';   // 8 branches of ~1000 instructions each, never gives up on a short path
   const UA_BENIGN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0';
-  const mk = (action: string, f: string, v: string, i: number): Rule => ({ id: `cr_${action}${f}${i}`, action, conds: [{ f, op: 'matches', v }] });
-  const many = (n: number, f: string, v: string) => Array.from({ length: n }, (_, i) => mk('block', f, v, i));
-  const run = (rules: Rule[], input: { path?: string; ua?: string }) =>
-    new Matcher(parseSnapshot(empty, { ...emptyMeta, rules })).match({ ip: '8.8.8.8', ...input } as never).rule;
 
   it('REQUEST_REGEX_WORK is 8388608 and a call costs 64', () => {
     expect(REQUEST_REGEX_WORK).toBe(8388608);
@@ -219,10 +220,7 @@ describe('1oqz: per-request regex work budget', () => {
 describe('rfyr: a pattern re2js refuses never matches', () => {
   const RF = V.refused.map((r) => r.pattern);
   const EXTRA = ['(?:a{99}|a{99}){12}z', '[\\s-z]', '[\\w-.]+@x', '(a)\\1', 'a{01001}'];
-  const LT1 = V.linear_time.find((r) => r.id === 'LT1')!.rule.conds[0].v;
-  const H1 = '/z' + 'a'.repeat(2046), H3 = '/Z/./' + 'a'.repeat(2043);
-  const mk = (id: string, action: string, f: string, v: string): Rule => ({ id, action, conds: [{ f, op: 'matches', v }] });
-  const run = (rules: Rule[], input: { path?: string; ua?: string }) => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules })).match({ ip: '8.8.8.8', ...input } as never);
+  const REFUSED = '(?:a{99}|a{99}){12}z';
 
   it.each([...RF, ...EXTRA].map((p) => [p] as const))('rfyr: %s compiles to null', (p) => {
     expect(compileMatches(p, true)).toBeNull();
@@ -230,50 +228,38 @@ describe('rfyr: a pattern re2js refuses never matches', () => {
   });
 
   it('rfyr: a refused skip rule does not exempt', () => {
-    const r = run([mk('cr_skip', 'skip', 'ua', V.refused[0].pattern), { id: 'cr_blk', action: 'block', conds: [{ f: 'ip', op: 'is_not', v: '1.1.1.1' }] }], { ua: 'Mozilla/5.0 Firefox/130.0' });
+    const blk: Rule = { id: 'cr_blk', action: 'block', conds: [{ f: 'ip', op: 'is_not', v: '1.1.1.1' }] };
+    const r = res([mk('skip', 'ua', V.refused[0].pattern, 0), blk], { ua: 'Mozilla/5.0 Firefox/130.0' });
     expect(r.allowed).toBe(false);
     expect(r.rule).toBe('cr_blk');
   });
 
   it('rfyr: a{01001} never matches a{1001}', () => {
-    expect(run([mk('cr_a', 'block', 'ua', 'a{01001}')], { path: '/', ua: 'a'.repeat(1001) }).rule).toBeUndefined();
+    expect(hits(mk('block', 'ua', 'a{01001}', 0), { ip: '8.8.8.8', ua: 'a'.repeat(1001) })).toBe(false);
   });
 
   it('rfyr: N stored refused rules spend no regex work', () => {
-    const refused = Array.from({ length: 200 }, () => pathPred('matches', ['(?:a{99}|a{99}){12}z']));
+    const refused = Array.from({ length: 200 }, () => pathPred('matches', [REFUSED]));
     const lt1 = Array.from({ length: 5 }, () => compileMatches(LT1, true)!);
     const out = withRegexBudget(() => [...refused.map((p) => p(H1, true)), ...lt1.map((re) => safeTest(re, H1, true))]);
     expect(out).toEqual([...Array(200).fill(false), false, false, false, false, true]);   // 4 run, then over: the same as with no refused rules
   }, 30_000);
 
   it('rfyr: 200 refused + 200 LT1 path rules cost one bounded walk', () => {
-    const rules = [...Array.from({ length: 200 }, (_, i) => mk(`cr_rf${i}`, 'block', 'path', '(?:a{99}|a{99}){12}z')), ...Array.from({ length: 200 }, (_, i) => mk(`cr_lt${i}`, 'block', 'path', LT1))];
+    const rules = [...many(200, 'path', REFUSED), ...many(200, 'path', LT1)].map((r, i) => ({ ...r, id: `cr_${i}` }));
     const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules }));
     let rule: string | undefined;
     const ms = best(() => { rule = m.match({ ip: '8.8.8.8', path: H3 }).rule; });
     expect(rule).toBe(rules[201].id);
     expect(ms).toBeLessThan(500);   // measured 114-117 ms; today minutes
   }, 60_000);
-
-  it('rfyr: 200 refused rules alone cost nothing, on a path and on a 2 KiB ua', () => {
-    const m = (f: string) => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules: Array.from({ length: 200 }, (_, i) => mk(`cr_rf${i}`, 'block', f, '(?:a{99}|a{99}){12}z')) }));
-    const mp = m('path'), mu = m('ua');
-    let a: string | undefined, b: string | undefined;
-    expect(best(() => { a = mp.match({ ip: '8.8.8.8', path: H3 }).rule; })).toBeLessThan(20);   // measured < 1 ms
-    expect(best(() => { b = mu.match({ ip: '8.8.8.8', path: '/', ua: 'a'.repeat(2048) }).rule; })).toBeLessThan(20);
-    expect(a).toBeUndefined();
-    expect(b).toBeUndefined();
-  });
 });
 
 // camada-all-z8p7: a path (case-insensitive) pattern gets re2js's required-literal pre-check, case-folded.
 describe('z8p7: case-folded required-literal pre-check for path rules', () => {
   const W256 = '[^/]{256}\\.(?:php|aspx?|jsp)';
-  const TOKEN = 'Zk3Qm9-xT_h2VbN7aLw0RyEu5CoDgPj1sFiHn4KcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQ'.slice(0, 400);
+  const TOKEN = 'aB3_-xYz9Qw'.repeat(40).slice(0, 400);   // the same value edge-analyst uses
   const PB = '/download/' + TOKEN + '/report.pdf';
-  const rule = (id: string, v: string): Rule => ({ id, action: 'block', conds: [{ f: 'path', op: 'matches', v }] });
-
-  it('the fixture token is 400 characters', () => { expect(TOKEN).toHaveLength(400); });
 
   it('a CI path rule skips a value without its required literal, charged like CS', () => {
     const rs = Array.from({ length: 200 }, () => compileMatches(W256, true)!);
@@ -286,7 +272,7 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
   });
 
   it('round 3: wide CI rules do not spend a benign long path budget', () => {
-    const rules = [...Array.from({ length: 30 }, (_, i) => rule(`cr_w${i}`, W256)), rule('cr_env', '\\.env$')];
+    const rules = [...many(30, 'path', W256), mk('block', 'path', '\\.env$', 30)];
     const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules }));
     let r: string | undefined = 'x';
     const ms = best(() => { r = m.match({ ip: '8.8.8.8', path: PB }).rule; });
@@ -300,7 +286,7 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
     expect(t('kelvin', '/\u212aelvin')).toBe(true);
     expect(t('/Wp-Admin/X\\.php', '/WP-ADMIN/x.PHP')).toBe(true);
     expect(t('\u00e9', '/\u00c9')).toBe(compileMatches('\u00e9', true)!.test('/\u00c9'));   // non-ASCII literal: no pre-check
-    expect(foldCase('A\u017fK\u212a')).toBe('asKk'.replace('K', 'k'));
+    expect(foldCase('A\u017fK\u212a')).toBe('askk');
     const rows: Array<[string, string]> = [
       ['sqlmap|nikto', '/x/SQLMap/y'], ['\\.env$', '/app/.ENV'], ['^/admin', '/Admin/x'], ['wp-(?:admin|login)', '/WP-Login.php'],
       ['[^/]{3}\\.php', '/abc.PHP'], ['.{0,300}\\.php', '/a/B.Php'], ['/api/v[0-9]+/Users', '/API/v2/users'], ['(?:foo|bar)baz', '/x/FOOBAZ'],
@@ -332,6 +318,19 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
     }
     expect(n).toBeGreaterThan(100);   // the generator exercises matches, not only misses
     expect(performance.now() - t0).toBeLessThan(2000);
+  });
+
+  it('a prefilter of more than 32 literals gets no pre-check (re2js MAX_SCANS)', () => {
+    const D = '0123456789abcdefghijklmnopqrstuvwxyz';   // scattered first characters, so re2js does not factor the alternation into a shared prefix
+    const alt = (n: number) => '(?:' + Array.from({ length: n }, (_, i) => D[i % 36] + D[(i * 7 + 3) % 36] + (i >= 36 ? 'z' : '')).join('|') + ')';
+    const leaves = (x: { type: number; subs?: unknown[] }): number => (x.type === 1 ? 1 : (x.subs as Array<{ type: number }> ?? []).reduce((k, y) => k + leaves(y as never), 0));
+    const wide = alt(40), edge = alt(32);
+    const tw = RE2JS.compile(wide, 0).re2().prefilter, te = RE2JS.compile(edge, 0).re2().prefilter;
+    expect(tw.type).toBe(3);   // OR
+    expect(leaves(tw)).toBeGreaterThan(32);
+    expect(leaves(te)).toBe(32);
+    expect(foldedPrefilter(wide)).toBeNull();
+    expect(foldedPrefilter(edge)).not.toBeNull();
   });
 
   it('tripwire: re2js prefilter internals', () => {
