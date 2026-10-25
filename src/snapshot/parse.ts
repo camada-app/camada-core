@@ -168,7 +168,7 @@ function fieldValue(f: string, r: RuleRequest): string | null {
 /** One condition -> a predicate. `sets` yields this rule's (v4, v6) section pair per ip condition,
  *  in condition order, so an ip condition consumes the next one. */
 function compileCond(c: SnapshotCondMeta, sets: Array<[Uint32Array, Uint32Array]>, deny: boolean): RuleCond {
-  if (c.op === 'matches' && typeof c.v !== 'string') return () => false;   // camada-all-7ztr: a stored non-string pattern (legacy row) never matches, never String()-coerced
+  if (c.op === 'matches' && (typeof c.v !== 'string' || c.v === '')) return () => false;   // camada-all-7ztr: a stored non-string pattern (legacy row) never matches, never String()-coerced; camada-all-510r: nor does ''
   if (c.f === 'path') {                          // canonical forms, never the raw string (./path.ts)
     const pred = pathPred(c.op, Array.isArray(c.v) ? c.v.map(String) : [String(c.v)]);
     return (r) => pathHit(pred, r.paths, deny);
