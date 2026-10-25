@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
-import { compileMatches, jsToRe2, MAX_MATCH_INPUT, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
+import { compileMatches, foldCase, jsToRe2, MAX_MATCH_INPUT, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, pathPred, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
 const REGEX_LIMIT_VECTORS_SHA256 = '79cd3686277fd9630592338a65d24e49f791aba5f1a182e7eef598eacae2fd24';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
@@ -21,7 +21,7 @@ const V = JSON.parse(raw.toString('utf8')) as {
   constants: Record<string, string | number>;
   over_limit: Array<{ id: string; rule: Rule; input: Record<string, Val>; hit: { linear: boolean } }>;
   linear_time: Array<{ id: string; rule: Rule; input: Record<string, Val>; hit: boolean; max_ms: number }>;
-  refused: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { native: boolean } }> }>;
+  refused: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { go: boolean; native: boolean } }> }>;
   refused_rule: { id: string; action: string; field: string };
   accepted: string[];
   translate: Array<[string, string]>;
@@ -62,9 +62,10 @@ describe('regex-limit vectors', () => {
   });
 
   const rr = V.refused_rule;
-  it.each(V.refused.flatMap((r) => r.cases.map((c, i) => [`${r.id}#${i} ${r.pattern}`, r, c] as const)))('refused %s falls back to native', (_l, r, c) => {
+  it.each(V.refused.flatMap((r) => r.cases.map((c, i) => [`${r.id}#${i} ${r.pattern}`, r, c] as const)))('refused %s never matches', (_l, r, c) => {
     expect(() => RE2JS.compile(jsToRe2(r.pattern))).toThrow();
-    expect(hits({ id: rr.id, action: rr.action, conds: [{ f: rr.field, op: 'matches', v: r.pattern }] }, { ip: '8.8.8.8', ua: c.ua })).toBe(c.hit.native);
+    expect(hits({ id: rr.id, action: rr.action, conds: [{ f: rr.field, op: 'matches', v: r.pattern }] }, { ip: '8.8.8.8', ua: c.ua })).toBe(c.hit.go);   // rfyr: as camada-go, a pattern re2js refuses never matches
+    expect(c.hit.go).toBe(false);
   });
 
   it.each(V.accepted.map((p) => [p] as const))('accepted %s compiles on re2js', (p) => {
@@ -72,13 +73,12 @@ describe('regex-limit vectors', () => {
     expect(compileMatches(p, false)).toBeInstanceOf(RE2JS);
   });
 
-  it('a - next to a class escape is refused (never translated); a stored pattern runs on the native RegExp', () => {
+  it('a - next to a class escape is refused (never translated); a stored pattern never matches (rfyr)', () => {
     for (const p of ['[\\s-z]', '[a-\\d]', '[\\s-a-b-e]', '[\\s-\\x41-z]']) {
       expect(() => jsToRe2(p), p).toThrow(SyntaxError);
       expect(() => RE2JS.compile(jsToRe2(p)), p).toThrow();
-      const re = compileMatches(p, false);
-      expect(re instanceof RegExp, p).toBe(true);
-      for (const t of ['a', 'b', 'c', 'e', 'z', 'A', '-', ' ', '5', '_']) expect(re!.test(t), `${p} ${t}`).toBe(new RegExp(p).test(t));
+      expect(compileMatches(p, false), p).toBeNull();
+      expect(compileMatches(p, true), p).toBeNull();
     }
     for (const p of ['[-\\sz]', '[\\s-]', '[a-z\\s]']) {
       expect(() => RE2JS.compile(jsToRe2(p)), p).not.toThrow();
@@ -96,7 +96,7 @@ describe('1oqz: per-request regex work budget', () => {
   const UA_HIT = 4;   // the ua is one form: rules 0-3 run, rule 4 finds the budget spent
   const LT1 = V.linear_time.find((r) => r.id === 'LT1')!.rule.conds[0].v;
   const LT2 = V.linear_time.find((r) => r.id === 'LT2')!.rule.conds[0].v;
-  const H1 = '/' + 'a'.repeat(2047), H3 = '/A/./' + 'a'.repeat(2043);   // 1 and 3 distinct path forms
+  const H1 = '/z' + 'a'.repeat(2046), H3 = '/Z/./' + 'a'.repeat(2043);   // 1 and 3 distinct path forms; both carry the literal z, or the CI pre-check (z8p7) would skip LT1
   const P8 = '(?:a[^ ]{0,500}dQ|b[^ ]{0,500}kQ|c[^ ]{0,500}mQ|e[^ ]{0,500}pQ|f[^ ]{0,500}rQ|g[^ ]{0,500}tQ|h[^ ]{0,500}vQ|j[^ ]{0,500}xQ)';   // 8 branches of ~1000 instructions each, never gives up on a short path
   const UA_BENIGN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0';
   const mk = (action: string, f: string, v: string, i: number): Rule => ({ id: `cr_${action}${f}${i}`, action, conds: [{ f, op: 'matches', v }] });
@@ -150,8 +150,8 @@ describe('1oqz: per-request regex work budget', () => {
   }, 30_000);
 
   it('no rule fires on harmless input after a cache clear (regression: a clear charged the full worst case)', () => {
-    expect(run([mk('block', 'path', '[^/]{1000}x', 0)], { path: '/Static/./' + 'b'.repeat(2030) })).toBeUndefined();
-    expect(run(many(3, 'path', '^/.{1000}z'), { path: '/' + 'b'.repeat(2040) })).toBeUndefined();
+    expect(run([mk('block', 'path', '[^/]{1000}x', 0)], { path: '/Static/./x' + 'b'.repeat(2029) })).toBeUndefined();
+    expect(run(many(3, 'path', '^/.{1000}z'), { path: '/z' + 'b'.repeat(2039) })).toBeUndefined();
   }, 30_000);
 
   it('a pattern of more than 1983 instructions still runs on a long value (regression: a reservation refused it)', () => {
@@ -166,6 +166,7 @@ describe('1oqz: per-request regex work budget', () => {
   it.each([
     ['P8 on a short path', 'path', P8, { path: '/products/item-123/reviews' }],
     ['P8 on a three-form path', 'path', P8, { path: '/Shop/Products/./Item-123/Reviews' }],
+    ['P8 on a path carrying a branch letter and its Q literal out of order (one form: three forms spend the budget at rule 183)', 'path', P8, { path: '/xq/Shop/Products/Item-123/Reviews/j' }],
     ['three [^/]{999} on a browser ua', 'ua', '[^/]{999}[^/]{999}[^/]{999}x', { path: '/', ua: UA_BENIGN }],
   ])('200 cold rules on benign input: %s gives no rule', (_n, f, p, input) => {
     const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules: many(200, f, p) }));
@@ -209,7 +210,132 @@ describe('1oqz: per-request regex work budget', () => {
 
   it('the worst shape found stays under the stated bound', () => {
     const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules: many(200, 'path', LT2) }));
-    const ms = best(() => m.match({ ip: '8.8.8.8', path: '/A/./' + 'a'.repeat(95) }));
+    const ms = best(() => m.match({ ip: '8.8.8.8', path: '/Z/./' + 'a'.repeat(95) }));
     expect(ms).toBeLessThan(500);   // bounded vs unbounded; loose for slow CI runners
   }, 60_000);
+});
+
+// camada-all-rfyr: a stored pattern re2js refuses never matches (as in camada-go); no native RegExp runs.
+describe('rfyr: a pattern re2js refuses never matches', () => {
+  const RF = V.refused.map((r) => r.pattern);
+  const EXTRA = ['(?:a{99}|a{99}){12}z', '[\\s-z]', '[\\w-.]+@x', '(a)\\1', 'a{01001}'];
+  const LT1 = V.linear_time.find((r) => r.id === 'LT1')!.rule.conds[0].v;
+  const H1 = '/z' + 'a'.repeat(2046), H3 = '/Z/./' + 'a'.repeat(2043);
+  const mk = (id: string, action: string, f: string, v: string): Rule => ({ id, action, conds: [{ f, op: 'matches', v }] });
+  const run = (rules: Rule[], input: { path?: string; ua?: string }) => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules })).match({ ip: '8.8.8.8', ...input } as never);
+
+  it.each([...RF, ...EXTRA].map((p) => [p] as const))('rfyr: %s compiles to null', (p) => {
+    expect(compileMatches(p, true)).toBeNull();
+    expect(compileMatches(p, false)).toBeNull();
+  });
+
+  it('rfyr: a refused skip rule does not exempt', () => {
+    const r = run([mk('cr_skip', 'skip', 'ua', V.refused[0].pattern), { id: 'cr_blk', action: 'block', conds: [{ f: 'ip', op: 'is_not', v: '1.1.1.1' }] }], { ua: 'Mozilla/5.0 Firefox/130.0' });
+    expect(r.allowed).toBe(false);
+    expect(r.rule).toBe('cr_blk');
+  });
+
+  it('rfyr: a{01001} never matches a{1001}', () => {
+    expect(run([mk('cr_a', 'block', 'ua', 'a{01001}')], { path: '/', ua: 'a'.repeat(1001) }).rule).toBeUndefined();
+  });
+
+  it('rfyr: N stored refused rules spend no regex work', () => {
+    const refused = Array.from({ length: 200 }, () => pathPred('matches', ['(?:a{99}|a{99}){12}z']));
+    const lt1 = Array.from({ length: 5 }, () => compileMatches(LT1, true)!);
+    const out = withRegexBudget(() => [...refused.map((p) => p(H1, true)), ...lt1.map((re) => safeTest(re, H1, true))]);
+    expect(out).toEqual([...Array(200).fill(false), false, false, false, false, true]);   // 4 run, then over: the same as with no refused rules
+  }, 30_000);
+
+  it('rfyr: 200 refused + 200 LT1 path rules cost one bounded walk', () => {
+    const rules = [...Array.from({ length: 200 }, (_, i) => mk(`cr_rf${i}`, 'block', 'path', '(?:a{99}|a{99}){12}z')), ...Array.from({ length: 200 }, (_, i) => mk(`cr_lt${i}`, 'block', 'path', LT1))];
+    const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules }));
+    let rule: string | undefined;
+    const ms = best(() => { rule = m.match({ ip: '8.8.8.8', path: H3 }).rule; });
+    expect(rule).toBe(rules[201].id);
+    expect(ms).toBeLessThan(500);   // measured 114-117 ms; today minutes
+  }, 60_000);
+
+  it('rfyr: 200 refused rules alone cost nothing, on a path and on a 2 KiB ua', () => {
+    const m = (f: string) => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules: Array.from({ length: 200 }, (_, i) => mk(`cr_rf${i}`, 'block', f, '(?:a{99}|a{99}){12}z')) }));
+    const mp = m('path'), mu = m('ua');
+    let a: string | undefined, b: string | undefined;
+    expect(best(() => { a = mp.match({ ip: '8.8.8.8', path: H3 }).rule; })).toBeLessThan(20);   // measured < 1 ms
+    expect(best(() => { b = mu.match({ ip: '8.8.8.8', path: '/', ua: 'a'.repeat(2048) }).rule; })).toBeLessThan(20);
+    expect(a).toBeUndefined();
+    expect(b).toBeUndefined();
+  });
+});
+
+// camada-all-z8p7: a path (case-insensitive) pattern gets re2js's required-literal pre-check, case-folded.
+describe('z8p7: case-folded required-literal pre-check for path rules', () => {
+  const W256 = '[^/]{256}\\.(?:php|aspx?|jsp)';
+  const TOKEN = 'Zk3Qm9-xT_h2VbN7aLw0RyEu5CoDgPj1sFiHn4KcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQh9aKw0RyEu5CoDgLj1sFiHn4ZcXe8MtYqUvB6zAr-OlIdSWf_GJp3Nm7Tx2VbQ'.slice(0, 400);
+  const PB = '/download/' + TOKEN + '/report.pdf';
+  const rule = (id: string, v: string): Rule => ({ id, action: 'block', conds: [{ f: 'path', op: 'matches', v }] });
+
+  it('the fixture token is 400 characters', () => { expect(TOKEN).toHaveLength(400); });
+
+  it('a CI path rule skips a value without its required literal, charged like CS', () => {
+    const rs = Array.from({ length: 200 }, () => compileMatches(W256, true)!);
+    expect(withRegexBudget(() => rs.map((re) => safeTest(re, PB, true)))).toEqual(Array(200).fill(false));   // none over (today 60 run, then over)
+    const v = '/' + 'b'.repeat(2046), want = Math.ceil(REQUEST_REGEX_WORK / (2047 + REGEX_STATE_WORK));
+    const ran = (re: { test(s: string): boolean }) => withRegexBudget(() => { let n = 0; for (let i = 0; i < 4000; i++) if (!safeTest(re, v, true)) n++; return n; });
+    expect(ran(compileMatches(W256, true)!)).toBe(want);
+    expect(ran(compileMatches(W256, false)!)).toBe(want);
+    expect(want).toBe(3974);
+  });
+
+  it('round 3: wide CI rules do not spend a benign long path budget', () => {
+    const rules = [...Array.from({ length: 30 }, (_, i) => rule(`cr_w${i}`, W256)), rule('cr_env', '\\.env$')];
+    const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules }));
+    let r: string | undefined = 'x';
+    const ms = best(() => { r = m.match({ ip: '8.8.8.8', path: PB }).rule; });
+    expect(r).toBeUndefined();   // today rule 30, a false block
+    expect(ms).toBeLessThan(20);   // measured 0.1 ms; today 74 ms
+  });
+
+  it('the pre-check folds case as re2js does', () => {
+    const t = (p: string, v: string) => safeTest(compileMatches(p, true)!, v, true);
+    expect(t('secret', '/\u017fecret')).toBe(true);
+    expect(t('kelvin', '/\u212aelvin')).toBe(true);
+    expect(t('/Wp-Admin/X\\.php', '/WP-ADMIN/x.PHP')).toBe(true);
+    expect(t('\u00e9', '/\u00c9')).toBe(compileMatches('\u00e9', true)!.test('/\u00c9'));   // non-ASCII literal: no pre-check
+    expect(foldCase('A\u017fK\u212a')).toBe('asKk'.replace('K', 'k'));
+    const rows: Array<[string, string]> = [
+      ['sqlmap|nikto', '/x/SQLMap/y'], ['\\.env$', '/app/.ENV'], ['^/admin', '/Admin/x'], ['wp-(?:admin|login)', '/WP-Login.php'],
+      ['[^/]{3}\\.php', '/abc.PHP'], ['.{0,300}\\.php', '/a/B.Php'], ['/api/v[0-9]+/Users', '/API/v2/users'], ['(?:foo|bar)baz', '/x/FOOBAZ'],
+      ['etc/passwd', '/..%2f/ETC/PASSWD'], ['select.+from', '/SELECT%20a FROM b'], ['\\.(?:git|svn)/', '/x/.GIT/'], ['phpmyadmin', '/PhpMyAdmin/'],
+      ['a.c', '/ABC'], ['(?i)xyz', '/XyZ'], ['cgi-bin', '/CGI-BIN/'], ['\\.bak$', '/a.BaK'], ['login|signin', '/SignIn'], ['[a-c]d', '/Bd'],
+      ['x{2,3}y', '/XXY'], ['shell\\.(?:php|asp)', '/Shell.ASP'],
+    ];
+    for (const [p, v] of rows) {
+      const re = compileMatches(p, true);
+      if (re) expect(safeTest(re, v, true), `${p} on ${v}`).toBe(re.test(v));
+    }
+    expect(rows.filter(([p, v]) => compileMatches(p, true)?.test(v)).length).toBeGreaterThanOrEqual(15);
+  });
+
+  it('the pre-check never changes an answer (2000 seeded patterns x 6 values)', () => {
+    let seed = 20261024;
+    const rnd = (n: number) => (seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) % n;
+    const pick = <T,>(a: T[]) => a[rnd(a.length)];
+    const LIT = ['php', 'Admin', 'wp', 'env', 'secret', 'kelvin', 'a', 'b', 'Z', 's', 'k', 'x1', 'sql', 'é'];
+    const atom = (): string => pick([() => pick(LIT), () => pick(LIT), () => '[^/]{2,5}', () => '.{0,4}', () => '[a-c]', () => '\\.', () => '(?:' + pick(LIT) + '|' + pick(LIT) + ')', () => pick(LIT) + '?', () => '[^a-z]', () => '\\W', () => '[A-Za-z]+'])();
+    const val = (): string => '/' + Array.from({ length: 1 + rnd(5) }, () => { const w = pick([...LIT, 'ſ', 'K', '.', '/', '-', 'Ab9']); return rnd(2) ? w : [...w].map((c) => (rnd(2) ? c.toUpperCase() : c.toLowerCase())).join(''); }).join('');
+    const t0 = performance.now();
+    let n = 0;
+    for (let i = 0; i < 2000; i++) {
+      const p = (rnd(4) === 0 ? '^' : '') + Array.from({ length: 1 + rnd(4) }, atom).join('') + (rnd(5) === 0 ? '$' : '');
+      const re = compileMatches(p, true);
+      if (!re) continue;
+      for (let j = 0; j < 6; j++) { const v = val(); const got = safeTest(re, v, true); if (got !== re.test(v)) throw new Error(`${p} on ${v}: ${got}`); n += got ? 1 : 0; }
+    }
+    expect(n).toBeGreaterThan(100);   // the generator exercises matches, not only misses
+    expect(performance.now() - t0).toBeLessThan(2000);
+  });
+
+  it('tripwire: re2js prefilter internals', () => {
+    expect(RE2JS.compile('.{0,300}\\.php', 0).re2().prefilter).toMatchObject({ type: 1, str: '.php' });
+    expect(RE2JS.compile(W256, 0).re2().prefilter.type).toBe(2);
+  });
 });
