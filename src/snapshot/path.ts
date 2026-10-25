@@ -80,9 +80,12 @@ export function prefixHit(prefixes: Set<string>, path: string): boolean {
  *  and a miss for a skip. */
 export const MAX_MATCH_INPUT = 2048;
 
+/** A predicate over one path form; `deny` also tells a `matches` predicate what an over-cap form answers. */
+export type PathPred = (p: string, deny: boolean) => boolean;
+
 /** Does `pred` hold for this request? deny = any spelling; an exemption = both canonical forms. `deny` also tells a
  *  `matches` predicate what an over-cap form answers. */
-export const pathHit = (pred: (p: string, deny: boolean) => boolean, forms: PathForms, deny: boolean): boolean =>
+export const pathHit = (pred: PathPred, forms: PathForms, deny: boolean): boolean =>
   // a spelling equal to one already tried is skipped: a test spends the request's regex budget, so skipping a repeat is also what keeps edge and core spending the same; keep the forms' order and skips identical in both
   deny ? pred(forms[0], true) || (forms[1] !== forms[0] && pred(forms[1], true)) || (forms[2] !== forms[0] && forms[2] !== forms[1] && pred(forms[2], true))
     : pred(forms[1], false) && (forms[2] === forms[1] || pred(forms[2], false));
@@ -190,7 +193,7 @@ export function safeTest(re: { test(s: string): boolean }, v: string, onError: b
 }
 
 /** One v5 path condition -> a predicate over a single path form. A regex this runtime rejects never matches. */
-export function pathPred(op: string, values: string[]): (p: string, deny: boolean) => boolean {
+export function pathPred(op: string, values: string[]): PathPred {
   if (op === 'matches') {
     const re = compileMatches(values[0], true);
     return (p, deny) => {
