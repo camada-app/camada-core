@@ -145,6 +145,7 @@ function pfOf(x: PfNode | null | undefined): ((v: string) => boolean) | null {
   if (!subs.length || !subs.every(Boolean)) return null;
   if (!x.allExact) return (v) => subs.some((f) => f!(v));
   const any = RE2JS.compile((x.subs as { str: string }[]).map((y) => RE2JS.quote(foldCase(y.str))).join('|'), 0);   // an OR of literals as re2js runs it: one Aho-Corasick pass (its own pre-check), not one scan per literal
+  const d = any.re2().dfa; d.maxMem = d.stateBudget = d.memBudget = RE2_DFA_MAX_MEM;   // capped like every customer pattern (sl00)
   return (v) => any.test(v);
 }
 // one scan per literal, an OR of literals one pass: a tree past re2js's own MAX_SCANS (32) is no pre-check (the DFA runs, budgeted)
