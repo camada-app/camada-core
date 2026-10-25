@@ -151,7 +151,7 @@ function pfOf(x: PfNode | null | undefined): Pf {
   return (v) => (pfPasses += 2, any.test(v));   // its Aho-Corasick pass, then its DFA
 }
 // the passes re2js' own pre-check makes over the value, from its prefilter tree: one per literal, one per OR of literals (re2js caps a tree at its MAX_SCANS, 32)
-const scans = (x: PfNode | null | undefined): number => (x?.type === 1 || x?.allExact ? 1 : Array.isArray(x?.subs) ? (x.subs as PfNode[]).reduce((k, y) => k + scans(y), 0) : 0);
+export const scans = (x: PfNode | null | undefined): number => (x?.type === 1 || x?.allExact ? 1 : Array.isArray(x?.subs) ? (x.subs as PfNode[]).reduce((k, y) => k + scans(y), 0) : 0);
 /** A predicate over a case-folded value: true when it holds every literal the case-sensitive compile of `p` requires; null when there is no constraint (or re2js has no prefilter). */
 export function foldedPrefilter(p: string): Pf { try { return pfOf(RE2JS.compile(jsToRe2(p), 0).re2().prefilter); } catch { return null; } }
 /** re2js' lazy DFA caches up to 8 MiB per pattern (200 wide rules held 1147 MiB); 64 KiB gives the same answers (a full cache is rebuilt or the NFA runs). */
@@ -212,7 +212,7 @@ export function safeTest(re: { test(s: string): boolean }, v: string, onError: b
   const g0 = dfaGiveUps, b0 = dfaBuilt, s0 = dfaSteps, m0 = w?.d?.memBudget ?? 0;
   let hit: boolean;
   try { hit = re.test(v); } catch { hit = onError; }
-  if (w) regexLeft -= w.full || dfaGiveUps !== g0 ? c * L + (L + 1) * w.n : c * L + (w.re2k + 1) * L + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d.memBudget + dfaSteps - s0;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
+  if (w) regexLeft -= w.full || dfaGiveUps !== g0 ? c * L + (L + 1) * w.n : (c + w.re2k + 1) * L + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d.memBudget + dfaSteps - s0;   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
   return hit;
 }
 
