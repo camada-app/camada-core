@@ -374,6 +374,22 @@
       "reason": "Block sqlmap in a header"
     },
     {
+      "id": "cr_000000000026",
+      "name": "Block a doubled-letter agent",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "^zerobot/a{02}b{0,03}$"
+        }
+      ],
+      "enabled": true,
+      "expires": null,
+      "builtin": null,
+      "reason": "Block a doubled-letter agent"
+    },
+    {
       "id": "cr_000000000010",
       "name": "Block a hosting ASN outside Germany",
       "action": "block",
@@ -860,6 +876,17 @@
           "op": "matches",
           "name": "x-tool",
           "value": "sqlmap"
+        }
+      ]
+    },
+    {
+      "id": "cr_000000000026",
+      "action": "block",
+      "conds": [
+        {
+          "field": "ua",
+          "op": "matches",
+          "value": "^zerobot/a{02}b{0,03}$"
         }
       ]
     },
