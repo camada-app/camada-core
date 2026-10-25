@@ -110,10 +110,13 @@ export function jsToRe2(p: string): string {
         out += '\\x{' + ((parseInt(p.substr(i + 1, 4), 16) - 0xd800) * 0x400 + parseInt(p.substr(i + 7, 4), 16) - 0xdc00 + 0x10000).toString(16) + '}';
         i += 10;
       }
-      else if (n === 'u') out += HEX4.test(p.slice(i + 1, i + 5)) ? '\\u' : 'u';
-      else if (n === 'x') out += HEX2.test(p.slice(i + 1, i + 3)) ? '\\x' : 'x';
+      // the digits or letter after \u \x \c belong to this atom, not the next one
+      else if (n === 'u' && HEX4.test(p.slice(i + 1, i + 5))) { out += '\\u' + p.slice(i + 1, i + 5); i += 4; }
+      else if (n === 'u') out += 'u';
+      else if (n === 'x' && HEX2.test(p.slice(i + 1, i + 3))) { out += '\\x' + p.slice(i + 1, i + 3); i += 2; }
+      else if (n === 'x') out += 'x';
       else if (n === 'c' && cls && /[0-9_]/.test(p[i + 1] ?? '')) out += '\\x' + (p.charCodeAt(++i) % 32).toString(16).padStart(2, '0');   // [\c_] is a control character in a class (Annex B)
-      else if (n === 'c') out += /[A-Za-z]/.test(p[i + 1] || '') ? '\\c' : '\\\\c';
+      else if (n === 'c') out += /[A-Za-z]/.test(p[i + 1] || '') ? '\\c' + p[++i] : '\\\\c';
       else if (n === 'b' && cls) out += '\\x08';
       else if (n === 's') out += cls ? WS : '[' + WS + ']';
       else if (n === 'S' && !cls) out += '[^' + WS + ']';
