@@ -135,17 +135,21 @@ export function jsToRe2(p: string): string {
 
 const NON_ASCII = /[^\x00-\x7f]/;
 export const foldCase = (v: string): string => v.toLowerCase().replaceAll('\u017f', 's');
-type PfNode = { type?: unknown; str?: unknown; subs?: unknown };
+type PfNode = { type?: unknown; str?: unknown; subs?: unknown; allExact?: unknown };
 function pfOf(x: PfNode | null | undefined): ((v: string) => boolean) | null {
   if (!x || typeof x.type !== 'number') return null;
   if (x.type === 1) { if (typeof x.str !== 'string' || !x.str || NON_ASCII.test(x.str)) return null; const s = foldCase(x.str); return (v) => v.includes(s); }
   if ((x.type !== 2 && x.type !== 3) || !Array.isArray(x.subs)) return null;
   const subs = (x.subs as PfNode[]).map(pfOf);
   if (x.type === 2) { const k = subs.filter((f): f is (v: string) => boolean => !!f); return k.length ? (v) => k.every((f) => f(v)) : null; }
-  return subs.length && subs.every(Boolean) ? (v) => subs.some((f) => f!(v)) : null;
+  if (!subs.length || !subs.every(Boolean)) return null;
+  if (!x.allExact) return (v) => subs.some((f) => f!(v));
+  const any = RE2JS.compile((x.subs as { str: string }[]).map((y) => RE2JS.quote(foldCase(y.str))).join('|'), 0);   // an OR of literals as re2js runs it: one Aho-Corasick pass (its own pre-check), not one scan per literal
+  return (v) => any.test(v);
 }
-const scans = (x: PfNode | null | undefined): number => (x?.type === 1 ? 1 : Array.isArray(x?.subs) ? (x.subs as PfNode[]).reduce((k, y) => k + scans(y), 0) : 0);
-/** At most re2js's own MAX_SCANS (32) includes per test: re2js runs a wide literal OR as one Aho-Corasick pass, ours would scan once per literal, so a wider tree is no pre-check (the DFA runs, budgeted). */
+// one scan per literal, an OR of literals one pass: a tree past re2js's own MAX_SCANS (32) is no pre-check (the DFA runs, budgeted)
+const scans = (x: PfNode | null | undefined): number => (x?.type === 1 || x?.allExact ? 1 : Array.isArray(x?.subs) ? (x.subs as PfNode[]).reduce((k, y) => k + scans(y), 0) : 0);
+/** A predicate over a case-folded value: true when it holds every literal the case-sensitive compile of `p` requires; null when there is no constraint (or re2js has no prefilter). */
 export function foldedPrefilter(p: string): ((v: string) => boolean) | null { try { const t = RE2JS.compile(jsToRe2(p), 0).re2().prefilter; return scans(t) <= 32 ? pfOf(t) : null; } catch { return null; } }
 /** re2js' lazy DFA caches up to 8 MiB per pattern (200 wide rules held 1147 MiB); 64 KiB gives the same answers (a full cache is rebuilt or the NFA runs). */
 export const RE2_DFA_MAX_MEM = 65536;
@@ -180,6 +184,7 @@ let regexLeft = Infinity;   // Infinity outside a request rule walk (entity plan
 /** The fixed cost of one DFA transition computed to an already-cached state (no new bytes), added to its target state's NFA-state count; every transition computed is charged its source state's NFA-state count. */
 export const REGEX_STEP_WORK = 256;
 let dfaBuilt = 0, dfaGiveUps = 0, dfaSteps = 0;
+let foldV = '', foldF = '';   // the last value safeTest folded: a walk tests each path form against every path rule, so it is folded once
 type Pf = ((v: string) => boolean) | null;
 const WORK = new WeakMap<object, { n: number; d: null; full: true; pf: Pf } | { n: number; d: { memBudget: number }; full?: undefined; pf: Pf }>();   // full: re2js internals missing, charge the worst case every test
 
@@ -199,7 +204,7 @@ export function withRegexBudget<T>(f: () => T): T {
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
   if (regexLeft <= 0) return onError;
   const w = WORK.get(re);
-  if (w?.pf && !w.pf(foldCase(v))) { regexLeft -= v.length + REGEX_STATE_WORK; return false; }
+  if (w?.pf && !w.pf(v === foldV ? foldF : (foldF = foldCase(foldV = v)))) { regexLeft -= v.length + REGEX_STATE_WORK; return false; }
   const g0 = dfaGiveUps, b0 = dfaBuilt, s0 = dfaSteps, m0 = w?.d?.memBudget ?? 0;
   let hit: boolean;
   try { hit = re.test(v); } catch { hit = onError; }
