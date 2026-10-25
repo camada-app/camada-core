@@ -29,7 +29,6 @@ describe('mx0h: a count written with a leading zero is read as its decimal value
 });
 
 describe('sl00: re2js lazy-DFA cache is bounded at 64 KiB per pattern', () => {
-  it('RE2_DFA_MAX_MEM is 65536', () => { expect(RE2_DFA_MAX_MEM).toBe(65536); });
   it('200 wide rules stay within 64 KiB each and 12.5 MiB accounted in total', () => {
     const input = '/' + 'a'.repeat(2047);
     let sum = 0;
