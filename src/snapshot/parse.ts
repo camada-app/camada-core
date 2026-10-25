@@ -34,7 +34,7 @@ export interface SnapshotSetMeta {
 export interface SnapshotCondMeta {
   f: string;                                     // ip | asn | country | tlsx | path | ua | header
   op: string;                                    // is | is_not | is_in | not_in | starts_with | contains | matches
-  v?: string | number | Array<string | number> | unknown;   // a legacy stored row may hold anything (7ztr)
+  v?: unknown;                                   // string | number | list as saved; a legacy stored row may hold anything (7ztr)
   set?: boolean;
   name?: string;                                 // header conditions only
 }
