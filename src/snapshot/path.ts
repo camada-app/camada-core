@@ -124,7 +124,7 @@ export function jsToRe2(p: string): string {
         if (c === '-' && at && p[i + 1] !== ']' && (ce || /^\\[sSdDwW]/.test(p.slice(i + 1, i + 3)))) throw new SyntaxError('a - next to \\s, \\d or \\w inside [ ]');   // JS reads it as a literal -, RE2 as a range: refuse, never emulate
         ce = false; at = true;
       }
-      out += c;
+      out += c === '[' ? '\\[' : c;   // camada-all-07c7: JS reads a [ inside a class as text, RE2 reads [:alpha:] as a POSIX class
     } else if (c === '[') {
       out += c;
       if (p[i + 1] === '^') out += p[++i];

@@ -98,6 +98,22 @@ describe('regex-limit vectors', () => {
   });
 });
 
+describe('kdq0: a [ inside a class is literal', () => {
+  it('escapes the [ in a class, not the one that opens it', () => {
+    for (const [from, to] of [['x[[:alpha:]]y', 'x[\\[:alpha:]]y'], ['x[^[:a:]]y', 'x[^\\[:a:]]y'], ['x[a[]y', 'x[a\\[]y'], ['x[\\[:a:]]y', 'x[\\[:a:]]y']]) expect(jsToRe2(from), from).toBe(to);
+  });
+
+  it('matches as JS does', () => {
+    for (const p of ['x[[:alpha:]]y', 'x[[:x:]]y', 'x[^[:a:]]y', 'x[[:a]y|b:]', 'x[[:]y', 'x[a[:]y']) {
+      for (const ci of [false, true]) {
+        const re = compileMatches(p, ci);
+        expect(re, p).not.toBeNull();
+        for (const s of ['xa]y', 'xby', 'x[]y', 'x:]y', 'xA]y', 'xb]y', 'xay', 'x[y', 'b:]']) expect(re!.test(s), `${p} ${ci} ${s}`).toBe(new RegExp(p, ci ? 'i' : '').test(s));
+      }
+    }
+  });
+});
+
 // camada-all-1oqz: a per-request regex work budget (mirrors edge-analyst blocklist.js).
 describe('1oqz: per-request regex work budget', () => {
   const UA_HIT = 4;   // the ua is one form: rules 0-3 run, rule 4 finds the budget spent
