@@ -7,7 +7,7 @@ import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
 import { compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = 'ec076bfb26f12f0f90ffa42bb7b975c6f905afdfe01ba2caeedf6295dd533696';
+const REGEX_LIMIT_VECTORS_SHA256 = 'da294143dd317792b38abc7097bb8185bfac32833d13d7a043f2101794a7c13b';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
@@ -22,6 +22,7 @@ const V = JSON.parse(raw.toString('utf8')) as {
   over_limit: Array<{ id: string; rule: Rule; input: Record<string, Val>; hit: { linear: boolean } }>;
   linear_time: Array<{ id: string; rule: Rule; input: Record<string, Val>; hit: boolean; max_ms: number }>;
   refused: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { go: boolean } }> }>;
+  accepted_match: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { go: boolean; native: boolean } }> }>;
   refused_rule: { id: string; action: string; field: string };
   accepted: string[];
   translate: Array<[string, string]>;
@@ -50,6 +51,7 @@ const run = (rules: Rule[], input: { path?: string; ua?: string }) => res(rules,
 describe('regex-limit vectors', () => {
   it('are the pinned bytes', () => {
     expect(createHash('sha256').update(raw).digest('hex')).toBe(REGEX_LIMIT_VECTORS_SHA256);
+    expect(V.accepted_match.length).toBeGreaterThan(0);
   });
 
   it('constants match', () => {
@@ -74,6 +76,11 @@ describe('regex-limit vectors', () => {
     expect(() => RE2JS.compile(jsToRe2(r.pattern))).toThrow();
     expect(hits({ id: rr.id, action: rr.action, conds: [{ f: rr.field, op: 'matches', v: r.pattern }] }, { ip: '8.8.8.8', ua: c.ua })).toBe(c.hit.go);   // rfyr: as camada-go, a pattern re2js refuses never matches
     expect(c.hit.go).toBe(false);
+  });
+
+  it.each(V.accepted_match.flatMap((r) => r.cases.map((c, i) => [`${r.id}#${i} ${r.pattern} on ${JSON.stringify(c.ua)}`, r, c] as const)))('accepted_match %s', (_l, r, c) => {
+    expect(hits({ id: rr.id, action: rr.action, conds: [{ f: rr.field, op: 'matches', v: r.pattern }] }, { ip: '8.8.8.8', ua: c.ua })).toBe(c.hit.go);
+    expect(new RegExp(r.pattern).test(val(c.ua))).toBe(c.hit.native);   // V8 is the reference the native SDKs follow
   });
 
   it.each(V.accepted.map((p) => [p] as const))('accepted %s compiles on re2js', (p) => {
