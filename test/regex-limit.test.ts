@@ -94,7 +94,7 @@ describe('regex-limit vectors', () => {
   });
 
   it('a - after a finished class range is a literal and compiles (camada-all-uged)', () => {
-    const cases: [string, string[], string[]][] = [['x[a-b-\\d]y', ['xay', 'x-y', 'x5y'], ['xcy']], ['x[a-z-\\w]y', ['xqy', 'x-y', 'x_y'], ['x.y']], ['x[A-Z-\\w]y', ['xAy', 'x-y', 'x_y'], ['x.y']], ['x[\\x41-\\x5a-\\w]y', ['xAy', 'x-y', 'x_y'], ['x.y']], ['x[\\x01-\\cB-\\d]y', ['x\x01y', 'x-y', 'x5y'], ['xay']]];
+    const cases: [string, string[], string[]][] = [['x[a-b-\\d]y', ['xay', 'x-y', 'x5y'], ['xcy']], ['x[a-z-\\w]y', ['xqy', 'x-y', 'x_y'], ['x.y']], ['x[\\u0041-\\u005a-\\w]y', ['xAy', 'x-y', 'x_y'], ['x.y']], ['x[\\x41-\\x5a-\\w]y', ['xAy', 'x-y', 'x_y'], ['x.y']], ['x[\\x01-\\cB-\\d]y', ['x\x01y', 'x-y', 'x5y'], ['xay']]];
     for (const [p, yes, no] of cases) {
       const re = compileMatches(p, false), js = new RegExp(p);
       expect(re, p).not.toBeNull();   // null when jsToRe2 throws
