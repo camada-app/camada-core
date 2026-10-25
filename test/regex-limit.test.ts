@@ -100,17 +100,14 @@ describe('regex-limit vectors', () => {
 
 it('jsToRe2 reads \\S inside [ ] as JS does (camada-all-ao29)', () => {
   expect(jsToRe2('x[\\S]y')).toBe('x[' + '\\x00-\\x08\\x0e-\\x1f\\x21-\\x9f\\x{a1}-\\x{167f}\\x{1681}-\\x{1fff}\\x{200b}-\\x{2027}\\x{202a}-\\x{202e}\\x{2030}-\\x{205e}\\x{2060}-\\x{2fff}\\x{3001}-\\x{fefe}\\x{ff00}-\\x{10ffff}' + ']y');
-  const m = (p: string, flags: number, s: string) => RE2JS.compile(jsToRe2(p), flags).matcher(s).find();
-  for (const ch of ['\u000b', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', '　', '﻿', ' ']) expect(m('x[\\S]y', 0, 'x' + ch + 'y'), JSON.stringify(ch)).toBe(false);
-  expect(m('x[\\S]y', 0, 'xay')).toBe(true);
+  for (const s of ['x y', 'x\u00a0y']) expect(compileMatches('x[\\S]y', false)!.test(s), s).toBe(false);
   for (const p of ['x[\\S]y', 'x[^\\S]y', 'x[a\\S]y'])
     for (const ci of [false, true]) {
-      const re = new RegExp(p, ci ? 'i' : ''), bad = [];
-      const r2 = RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0);
+      const re = new RegExp(p, ci ? 'i' : ''), r2 = compileMatches(p, ci)!, bad: string[] = [];
       for (let c = 0; c < 0x10000; c++) {
         if (c >= 0xd800 && c <= 0xdfff) continue;
         const s = 'x' + String.fromCharCode(c) + 'y';
-        if (r2.matcher(s).find() !== re.test(s)) bad.push(c.toString(16));
+        if (r2.test(s) !== re.test(s)) bad.push(c.toString(16));
       }
       expect(bad, `${p} ${ci}`).toEqual([]);
     }
