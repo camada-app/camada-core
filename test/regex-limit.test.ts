@@ -273,3 +273,21 @@ describe('7ztr: a non-string matches value never matches', () => {
     });
   }
 });
+
+// camada-all-510r: a stored empty `matches` value never matches (it used to compile to an empty regex that matches everything).
+describe('510r: an empty matches value never matches', () => {
+  const OVER = 'a'.repeat(MAX_MATCH_INPUT + 1);
+  const run = (rules: unknown[], over: string) => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules } as never))
+    .match({ ip: '8.8.8.8', path: over === 'path' ? `/a/${OVER}` : '/a', ua: over === 'ua' ? OVER : 'ua', header: () => (over === 'header' ? OVER : 'h') } as never);
+  const blk = { id: 'cr_blk', action: 'block', conds: [{ f: 'ip', op: 'is_not', v: '1.1.1.1' }] };
+
+  for (const f of ['ua', 'path', 'header']) for (const over of ['', f]) {
+    it(`'' on ${f}${over ? ' over the cap' : ''}: block never matches, skip does not exempt`, () => {
+      const cond = { f, op: 'matches', v: '', ...(f === 'header' ? { name: 'x-h' } : {}) };
+      expect(run([{ id: 'cr_b', action: 'block', conds: [cond] }], over).block).toBe(false);
+      const r = run([{ id: 'cr_s', action: 'skip', conds: [cond] }, blk], over);
+      expect(r.allowed).toBe(false);
+      expect(r.rule).toBe('cr_blk');
+    });
+  }
+});
