@@ -1,6 +1,6 @@
 // Contract regex-limit v1 (camada-all-2pap): customer `matches` regexes run on a linear-time engine (re2js), so a
 // pathological pattern costs bounded time. The vectors are a byte-identical copy shared with the other repos.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { RE2JS } from 're2js';
@@ -342,7 +342,7 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
     }
   });
 
-  it('z8p7 review r2: a pre-check is charged one pass per literal scan', () => {
+  it('z8p7 review r2: a pre-check is charged two passes per OR of literals, all groups run before the last misses; a miss in the first group stops there', () => {
     const L = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let p = '', i = 0;
     while (p.length < 190) { p += `(?:${L[i % 36]}${i < 36 ? 'q' : 'r'}|${L[(i + 1) % 36]}${i < 36 ? 'w' : 'x'})`; i += 2; }   // the second lap changes the suffix so the dropped group's literals occur nowhere else in V
@@ -358,6 +358,7 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
     const t0 = performance.now();
     withRegexBudget(() => { for (;;) { if (safeTest(re, V, 'X' as never) === ('X' as never)) break; tests++; } });
     expect(tests).toBe(want(k, 2048));
+    expect(fit(re, base)).toBe(want(2, 2048));   // the miss is in the FIRST group: two passes, the AND short-circuits
     expect(performance.now() - t0).toBeLessThan(500);   // measured about 90 ms; before the fix 1.7 s
   });
 
@@ -408,12 +409,25 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
     expect(n).toBeGreaterThan(0.95 * w);
   });
 
-  it('review r3 (4): 70 CI rules of 20 required literals on a benign path missing the first one spend L+64 each, no rule fires', () => {
+  it('review r4: 100 CI rules of 20 required literals on a benign path missing the first one spend L+64 a form each, no rule fires', () => {
+    // raw, lit and full forms differ (upper case, %41): 3 forms x 100 rules x 20 static passes x ~2024 = ~12.2 M > 8.39 M (a static charge would go over and deny); option A: 3 x 100 x (2024+64) = ~0.63 M
     const p = Array.from({ length: 20 }, (_, i) => `lit${String.fromCharCode(97 + i)}x`).join('.*');
-    const benign = '/' + 'b'.repeat(2047);
-    expect(fit(compileMatches(p, true)!, benign)).toBe(want(1, 2048));   // AND exits at the first literal: ours = 1
-    const rules = Array.from({ length: 70 }, (_, i) => mk('block', 'path', p + (i % 2 ? '' : '.*'), i));
+    const benign = '/Download/' + 'A'.repeat(2000) + '%41/Report.pdf';
+    expect(fit(compileMatches(p, true)!, benign)).toBe(want(1, benign.length));   // AND exits at the first literal: ours = 1
+    const rules = Array.from({ length: 100 }, (_, i) => mk('block', 'path', p + (i % 2 ? '' : '.*'), i));
     expect(res(rules, { path: benign }).rule).toBeUndefined();
+    expect(res([...rules, mk('block', 'path', 'report\\.pdf$', 100)], { path: benign }).rule).toBe('cr_blockpath100');   // a later rule still fires
+  });
+
+  it('review r4: a pre-check that throws answers onError like a re.test failure', () => {
+    const re = compileMatches('(?:sqlmap|nikto|havij)', true)!, spy = vi.spyOn(RE2JS.prototype, 'test').mockImplementation(() => { throw new RangeError('boom'); });
+    try { expect(withRegexBudget(() => safeTest(re, '/NIKTO', 'X' as never))).toBe('X'); } finally { spy.mockRestore(); }
+  });
+
+  it('review r4: the pre-check is charged at the folded length (U+0130 folds to two code units)', () => {
+    const v = '\u0130'.repeat(2047);
+    expect(foldCase(v).length).toBe(4094);
+    expect(fit(compileMatches('secret', true)!, v)).toBe(want(1, 4094));
   });
 
   it('tripwire: re2js prefilter internals', () => {
