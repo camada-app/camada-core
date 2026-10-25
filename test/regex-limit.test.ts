@@ -261,15 +261,13 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
   const TOKEN = 'aB3_-xYz9Qw'.repeat(40).slice(0, 400);   // the same value edge-analyst uses
   const PB = '/download/' + TOKEN + '/report.pdf';
 
-  it('a CI path rule skips a value without its required literal, charged like CS', () => {
+  it('a CI path rule skips a value without its required literal, charged the passes it makes', () => {
     const rs = Array.from({ length: 200 }, () => compileMatches(W256, true)!);
     expect(withRegexBudget(() => rs.map((re) => safeTest(re, PB, true)))).toEqual(Array(200).fill(false));   // none over (today 60 run, then over)
-    expect(foldedPrefilter(W256)!.scans).toBe(2);   // an AND of "." and an OR of literals: two passes, so a test is charged 2 lengths
-    const v = '/' + 'b'.repeat(2046), want = Math.ceil(REQUEST_REGEX_WORK / (2 * 2047 + REGEX_STATE_WORK));
-    const ran = (re: { test(s: string): boolean }) => withRegexBudget(() => { let n = 0; for (let i = 0; i < 4000; i++) if (!safeTest(re, v, true)) n++; return n; });
-    expect(ran(compileMatches(W256, true)!)).toBe(want);
-    expect(ran(compileMatches(W256, false)!)).toBe(want);
-    expect(want).toBe(2018);
+    // option A: the CI pre-check is an AND of "." and an OR of literals; on this value it exits at "." (1 pass), so L+64; the CS compile runs re2js's own pre-check (2 scans) and the DFA: (2+1)L+64
+    const v = '/' + 'b'.repeat(2046), ran = (re: { test(s: string): boolean }) => withRegexBudget(() => { let n = 0; for (let i = 0; i < 4000; i++) if (!safeTest(re, v, true)) n++; return n; });
+    expect(ran(compileMatches(W256, true)!)).toBe(Math.ceil(REQUEST_REGEX_WORK / (2047 + REGEX_STATE_WORK)));
+    expect(ran(compileMatches(W256, false)!)).toBe(Math.ceil(REQUEST_REGEX_WORK / (3 * 2047 + REGEX_STATE_WORK)));
   });
 
   it('round 3: wide CI rules do not spend a benign long path budget', () => {
@@ -321,7 +319,7 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
     expect(performance.now() - t0).toBeLessThan(2000);
   });
 
-  it('z8p7: an OR of literals is one pre-check pass, however wide', () => {
+  it('z8p7: an OR of literals is one pre-check however wide', () => {
     const D = '0123456789abcdefghijklmnopqrstuvwxyz';   // scattered first characters, so re2js does not factor the alternation into a shared prefix
     const alt = (n: number) => '(?:' + Array.from({ length: n }, (_, i) => D[i % 36] + D[(i * 7 + 3) % 36] + (i >= 36 ? 'z' : '')).join('|') + ')';
     const leaves = (x: { type: number; subs?: unknown[] }): number => (x.type === 1 ? 1 : (x.subs as Array<{ type: number }> ?? []).reduce((k, y) => k + leaves(y as never), 0));
@@ -332,8 +330,7 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
       expect(leaves(tw)).toBe(n);
       expect(tw.allExact).toBe(true);
       const pf = foldedPrefilter(p);
-      expect(pf).toBeInstanceOf(Function);
-      expect(pf!.scans).toBe(1);   // no 32-scan cap of ours: an OR of literals is one pass and the pre-check stays
+      expect(pf).toBeInstanceOf(Function);   // no 32-scan cap of ours: an OR of literals stays one pre-check
       expect(pf!('/-.-.-')).toBe(false);
       expect(pf!(foldCase('/xx/A1/yy'))).toBe(true);
       const re = compileMatches(p, true)!;
@@ -346,13 +343,12 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
     let p = '', i = 0;
     while (p.length < 190) { p += `(?:${L[i % 36]}${i < 36 ? 'q' : 'r'}|${L[(i + 1) % 36]}${i < 36 ? 'w' : 'x'})`; i += 2; }   // the second lap changes the suffix so the dropped group's literals occur nowhere else in V
     p = p.slice(0, p.lastIndexOf('(?:'));
-    const groups = (p.match(/\(\?:/g) ?? []).length, k = groups;
-    expect(foldedPrefilter(p)!.scans).toBe(groups);
+    const groups = (p.match(/\(\?:/g) ?? []).length, k = 2 * groups;   // option A: each OR of literals is two passes (its Aho-Corasick pass, then its DFA), all groups run before the last misses
     const lits = [...p.matchAll(/\(\?:(..)\|/g)].map((m) => m[1]!); lits.pop();
     const al = 'abcdefghij', base = Array.from({ length: 2048 }, (_, j) => al[(j * 7) % 10]).join('');
     const V = base.slice(0, 2048 - lits.join('').length) + lits.join('');
     expect(V.length).toBe(2048);
-    expect(foldedPrefilter(p)!(foldCase(V))).toBe(false);   // a pre-check miss: every test costs exactly 2048 * k + 64
+    expect(foldedPrefilter(p)!(foldCase(V))).toBe(false);   // a pre-check miss: every test costs exactly 2048 * k + 64 (k = 2 per group)
     const re = compileMatches(p, true)!;
     let tests = 0;
     const t0 = performance.now();
@@ -369,8 +365,61 @@ describe('z8p7: case-folded required-literal pre-check for path rules', () => {
       const re = compileMatches(p, false)!;
       let n = 0;
       withRegexBudget(() => { while (safeTest(re, miss, 'X' as never) !== ('X' as never)) n++; });
-      expect(n, p).toBe(Math.ceil(REQUEST_REGEX_WORK / (miss.length * k + REGEX_STATE_WORK)));
+      expect(n, p).toBe(Math.ceil(REQUEST_REGEX_WORK / (miss.length * (k + 1) + REGEX_STATE_WORK)));   // option A: re2js's scans plus the DFA's one pass
     }
+  });
+
+  // option A (camada-all-z8p7 review r3): a test is charged the passes actually made. tests = how many fit one request budget, 'X' marks the first unrun test.
+  const fit = (re: { test(s: string): boolean }, v: string) => { let n = 0; withRegexBudget(() => { while (safeTest(re, v, 'X' as never) !== ('X' as never)) n++; }); return n; };
+  const lenCharge = (passes: number, L: number) => passes * L + REGEX_STATE_WORK;
+  const scansOfTree = (x: { type?: number; allExact?: boolean; subs?: unknown[] }): number => (x.type === 1 || x.allExact ? 1 : (x.subs as Array<typeof x> | undefined)?.reduce((a, y) => a + scansOfTree(y), 0) ?? 0);
+
+  it('review r3 (1): a CI compile that keeps a prefilter is charged ours + re2js\'s own + the DFA pass', () => {
+    const D = '0123456789abcdefghijklmnopqrstuv';
+    const lits = [...D].map((c) => c + '.'), p = (order: string[]) => order.map((l) => `[${l[0]}][.]`).join('.*');
+    const asc = p(lits), re2k = scansOfTree(RE2JS.compile(jsToRe2(asc), RE2JS.CASE_INSENSITIVE).re2().prefilter as never);
+    expect(re2k).toBeGreaterThan(0);   // the CI compile keeps the case-less literals ("0." .. "9.")
+    const v = '/' + lits.join('x'.repeat(40)).padEnd(2047, 'x');   // holds all 32 literals, ascending
+    const L = v.length, per = lenCharge(32 + re2k + 1, L);
+    const re = compileMatches(p([...lits].reverse()), true)!;   // descending: all literals present, never matches in order
+    expect(safeTest(re, v, true)).toBe(false);
+    const n = fit(compileMatches(p([...lits].reverse()), true)!, v);
+    console.log(`r3(1): re2k=${re2k} per-test>=${per} tests=${n} (want ${Math.ceil(REQUEST_REGEX_WORK / per)} + DFA terms)`);
+    expect(n).toBeLessThanOrEqual(Math.ceil(REQUEST_REGEX_WORK / per));
+    expect(n).toBeGreaterThan(0.95 * Math.ceil(REQUEST_REGEX_WORK / per));   // DFA terms stay small on a warm cache
+    // wall clock on node: a request's budget of such rules (each a distinct rotation, so none fires in order)
+    const rev = [...lits].reverse(), rules = Array.from({ length: 200 }, (_, i) => mk('block', 'path', p([...rev.slice(i % 32), ...rev.slice(0, i % 32)]), i));
+    const m = new Matcher(parseSnapshot(empty, { ...emptyMeta, rules }));
+    const t1 = performance.now(), got = m.match({ ip: '8.8.8.8', path: v }).rule, cold = performance.now() - t1;
+    const ms = best(() => m.match({ ip: '8.8.8.8', path: v }));
+    console.log(`r3(1): rule=${got} cold ${cold.toFixed(1)} ms, best of 3 = ${ms.toFixed(1)} ms`);
+    expect(ms).toBeLessThan(500);   // target ~100-130 ms on an M3 Max
+  }, 60_000);
+
+  it('review r3 (2): a test whose pre-check passes is charged (c + re2k + 1)L + 64, the DFA pass counted', () => {
+    const v = '/' + 'a'.repeat(1000) + 'NIKTO' + 'a'.repeat(500) + 'sqlmap' + 'a'.repeat(536);   // both literals, in the wrong order for `sqlmap.*nikto`
+    expect(v.length).toBe(2048);
+    const per = lenCharge(2 + 0 + 1, 2048), n = fit(compileMatches('sqlmap.*nikto', true)!, v);   // c = 2 (two leaves), re2k = 0 (letters have case), +1 DFA
+    expect(n).toBeLessThanOrEqual(Math.ceil(REQUEST_REGEX_WORK / per));
+    expect(n).toBeGreaterThan(0.95 * Math.ceil(REQUEST_REGEX_WORK / per));
+  });
+
+  it('review r3 (3): a literal-OR pre-check hit is two passes', () => {
+    const re = compileMatches('(?:sqlmap|nikto|havij)', true)!;
+    const miss = '/' + 'a'.repeat(2047), hit = '/' + 'a'.repeat(2030) + 'NIKTO' + 'a'.repeat(12);
+    expect(hit.length).toBe(2048);
+    expect(fit(re, miss)).toBe(Math.ceil(REQUEST_REGEX_WORK / lenCharge(2, 2048)));   // the OR's two passes, a miss: 2L+64
+    const per = lenCharge(2 + 1, 2048), n = fit(compileMatches('(?:sqlmap|nikto|havij)', true)!, hit);   // plus the DFA pass
+    expect(n).toBeLessThanOrEqual(Math.ceil(REQUEST_REGEX_WORK / per));
+    expect(n).toBeGreaterThan(0.95 * Math.ceil(REQUEST_REGEX_WORK / per));
+  });
+
+  it('review r3 (4): 70 CI rules of 20 required literals on a benign path missing the first one spend L+64 each, no rule fires', () => {
+    const p = Array.from({ length: 20 }, (_, i) => `lit${String.fromCharCode(97 + i)}x`).join('.*');
+    const benign = '/' + 'b'.repeat(2047);
+    expect(fit(compileMatches(p, true)!, benign)).toBe(Math.ceil(REQUEST_REGEX_WORK / lenCharge(1, 2048)));   // AND exits at the first literal: ours = 1
+    const rules = Array.from({ length: 70 }, (_, i) => mk('block', 'path', p + (i % 2 ? '' : '.*'), i));
+    expect(res(rules, { path: benign }).rule).toBeUndefined();
   });
 
   it('tripwire: re2js prefilter internals', () => {
