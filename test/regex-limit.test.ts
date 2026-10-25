@@ -254,9 +254,9 @@ describe('rfyr: a pattern re2js refuses never matches', () => {
   }, 60_000);
 });
 
-// camada-all-7ztr: a stored `matches` value that is not a string never matches (no String() coercion).
-describe('7ztr: a non-string matches value never matches', () => {
-  const VALS: unknown[] = [123, 0, true, null, { x: 1 }, ['^/a'], [123]];
+// camada-all-7ztr, camada-all-510r: a stored `matches` value that is not a string, or is '', never matches (no String() coercion, no empty regex).
+describe('7ztr, 510r: a non-string or empty matches value never matches', () => {
+  const VALS: unknown[] = [123, 0, true, null, { x: 1 }, ['^/a'], [123], ''];   // '': an empty regex would match everything (camada-all-510r)
   const STR = '123 null 0 true [object Object]';   // every String()-coerced form of VALS appears in the ua, header and path
   const OVER = 'a'.repeat(MAX_MATCH_INPUT + 1);
   const run7 = (rules: unknown[], over = '') => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules } as never))
