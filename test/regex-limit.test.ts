@@ -7,7 +7,7 @@ import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
 import { ASTRAL_QUANT, ASTRAL_CLASS, compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = 'b01e86bd2bead280081f58d31f7f517131d8cafa6144b8c27fe868e3c3959d56';
+const REGEX_LIMIT_VECTORS_SHA256 = 'd549b323af4ba9b863a401a474da77baee46711832d1ef4241986bafc0bffc15';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
@@ -22,6 +22,7 @@ const V = JSON.parse(raw.toString('utf8')) as {
   over_limit: Array<{ id: string; rule: Rule; input: Record<string, Val>; hit: { linear: boolean } }>;
   linear_time: Array<{ id: string; rule: Rule; input: Record<string, Val>; hit: boolean; max_ms: number }>;
   refused: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { go: boolean } }> }>;
+  astral_split: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { go: boolean; v8: boolean } }> }>;
   accepted_match: Array<{ id: string; pattern: string; cases: Array<{ ua: Val; hit: { go: boolean; native: boolean } }> }>;
   refused_rule: { id: string; action: string; field: string };
   accepted: string[];
@@ -76,6 +77,29 @@ describe('regex-limit vectors', () => {
     expect(() => RE2JS.compile(jsToRe2(r.pattern))).toThrow();
     expect(hits({ id: rr.id, action: rr.action, conds: [{ f: rr.field, op: 'matches', v: r.pattern }] }, { ip: '8.8.8.8', ua: c.ua })).toBe(c.hit.go);   // rfyr: as camada-go, a pattern re2js refuses never matches
     expect(c.hit.go).toBe(false);
+  });
+
+  it('astral_split is non-empty', () => expect(V.astral_split.length).toBeGreaterThan(0));
+  it.each(V.astral_split.flatMap((r) => r.cases.map((c, i) => [`${r.id}#${i} ${r.pattern}`, r, c] as const)))('astral_split %s', (_l, r, c) => {
+    expect(hits({ id: rr.id, action: rr.action, conds: [{ f: rr.field, op: 'matches', v: r.pattern }] }, { ip: '8.8.8.8', ua: c.ua })).toBe(c.hit.go);
+    expect(new RegExp(r.pattern).test(val(c.ua))).toBe(c.hit.v8);
+  });
+
+  describe('a raw lone surrogate (camada-all-5fxz): a stored one never matches the half', () => {
+    const H = String.fromCharCode(0xD83D), L = String.fromCharCode(0xDE00), E = 'x\u{1F600}y';
+    it('compileMatches: each form misses x\u{1F600}y and xy', () => {
+      for (const p of ['x' + H, L + 'y', 'x' + H + '\\uDE00y', 'x\\uD83D' + L + 'y', 'x' + H + '\\uDE00?y']) {
+        const re = compileMatches(p, false);
+        expect(re, JSON.stringify(p)).not.toBeNull();
+        for (const t of [E, 'xy']) expect(re!.test(t), `${JSON.stringify(p)} ${t}`).toBe(false);
+      }
+    });
+    it('a|x+half still hits a; x[half+a]y hits xay, misses x\u{1F600}y', () => {
+      expect(compileMatches('a|x' + H, false)!.test('a')).toBe(true);
+      const re = compileMatches('x[' + H + 'a]y', false)!;
+      expect(re.test('xay')).toBe(true);
+      expect(re.test(E)).toBe(false);
+    });
   });
 
   it.each(V.accepted_match.flatMap((r) => r.cases.map((c, i) => [`${r.id}#${i} ${r.pattern} on ${JSON.stringify(c.ua)}`, r, c] as const)))('accepted_match %s', (_l, r, c) => {
