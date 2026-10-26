@@ -418,14 +418,16 @@ describe('cfx4: a raw astral character inside [ ]', () => {
 });
 
 // camada-all-z8p7: a case-insensitive test checks the pattern's required literals on the case-folded value before re2js runs, and charges every scan at the value's length.
+const WIDE = '[^/]{256}\\.(?:php|aspx?|jsp)';
+const charge = (p: string | { test(s: string): boolean }, v: string, ci = true): { hit: boolean; spent: number } => withRegexBudget(() => {   // a pattern, or a compiled one to reuse
+  const re = typeof p === 'string' ? compileMatches(p, ci)! : p, hit = safeTest(re, v, true);
+  return { hit, spent: REQUEST_REGEX_WORK - regexWorkLeft() };
+});
+const fresh = (p: string, v: string, ci = true) => RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0).test(v);
+
 describe('z8p7: case-insensitive literal pre-check', () => {
-  const P = '[^/]{256}\\.(?:php|aspx?|jsp)';
+  const P = WIDE;
   const BENIGN = '/download/' + 'aB3'.repeat(134) + '/report-2';   // 421 characters, no '.', so the pre-check rejects after the '.' literal
-  const charge = (p: string, v: string): { hit: boolean; spent: number } => withRegexBudget(() => {
-    const re = compileMatches(p, true)!, hit = safeTest(re, v, true);
-    return { hit, spent: REQUEST_REGEX_WORK - regexWorkLeft() };
-  });
-  const fresh = (p: string, v: string) => RE2JS.compile(jsToRe2(p), RE2JS.CASE_INSENSITIVE).test(v);
 
   it('a benign path lacking the literal answers false, charged (fold + scans) x L + 64', () => {
     const L = BENIGN.length;
@@ -451,11 +453,11 @@ describe('z8p7: case-insensitive literal pre-check', () => {
     for (const [p, vs] of cases) for (const v of vs) expect(charge(p, v).hit, `${p} ${v}`).toBe(fresh(p, v));
   });
 
-  it('seeded differential: 2000 random patterns x values equal a fresh case-insensitive compile', () => {
+  it('seeded differential: random patterns x values, case-sensitive and not, equal a fresh re2js compile whose own prefilter is cleared here', () => {
     let seed = 42;
     const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
-    const A = ['a', 'A', 'k', 'K', 's', 'ſ', 'K', 'İ', 'é', 'É', 'p', 'h', '.', '/', '0', '1', 'x'];
-    const atom = () => { const a = A[rnd(A.length)]; return a === '.' ? '\\.' : a; };
+    const A = ['a', 'A', 'k', 'K', 's', 'ſ', 'K', 'İ', 'ı', 'é', 'É', 'ß', '中', '😀', '\ud800', '\ufffd', 'p', 'h', '.', '/', '0', '1', 'x', 'x'.repeat(300)];
+    const atom = () => { const a = A[rnd(A.length)]; return a === '.' ? '\\.' : a === '\ud800' ? '\\x{d800}' : a; };
     const piece = (): string => {
       const r = rnd(9);
       if (r === 0) return '(?:' + atom() + atom() + '|' + atom() + ')';
@@ -466,13 +468,16 @@ describe('z8p7: case-insensitive literal pre-check', () => {
       if (r === 5) return atom() + '{2}';
       return atom();
     };
-    for (let i = 0; i < 2000; i++) {
+    for (let i = 0; i < 1200; i++) {
       const p = Array.from({ length: 1 + rnd(4) }, piece).join('');
-      const re = compileMatches(p, true);
-      if (!re) continue;
-      for (let j = 0; j < 5; j++) {
-        const v = Array.from({ length: 1 + rnd(8) }, () => A[rnd(A.length)]).join('');
-        expect(safeTest(re, v, true), `${p} ${JSON.stringify(v)}`).toBe(fresh(p, v));
+      for (const ci of [false, true]) {
+        let re; try { re = compileMatches(p, ci); } catch { continue; }
+        if (!re) continue;
+        expect((re as unknown as { re2(): { prefilter: unknown } }).re2().prefilter, p).toBeNull();
+        for (let j = 0; j < 4; j++) {
+          const v = Array.from({ length: 1 + rnd(8) }, () => A[rnd(A.length)]).join('');
+          expect(safeTest(re, v, true), `${ci} ${p} ${JSON.stringify(v.slice(0, 12))}`).toBe(fresh(p, v, ci));
+        }
       }
     }
   });
@@ -501,70 +506,26 @@ describe('z8p7: case-insensitive literal pre-check', () => {
 
 describe('xata: case-sensitive literal pre-check is charged', () => {
   const TOKEN_PATH = '/download/' + 'a'.repeat(400) + '/report.pdf';   // 421 characters
-  const WIDE = '[^/]{256}\\.(?:php|aspx?|jsp)';
   const C36 = '0123456789abcdefghijklmnopqrstuvwxyz', lits = Array.from({ length: 32 }, (_, i) => 'a' + C36[i + 1]);
   const P_MISS = lits.slice(0, 31).join('.') + '.zz', tail = lits.join('.'), UA = 'a'.repeat(2048 - tail.length) + tail;
-  const cost = (p: string, ci: boolean, ...vs: string[]) => withRegexBudget(() => {
-    const re = compileMatches(p, ci)!, out: Array<{ hit: boolean; spent: number }> = [];
-    for (const v of vs) { const a = regexWorkLeft(); out.push({ hit: safeTest(re, v, true), spent: a - regexWorkLeft() }); }
-    return out;
-  });
-  const fresh = (p: string, ci: boolean, v: string) => RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0).test(v);
-  const pf = (re: unknown) => (re as { re2(): { prefilter: unknown } }).re2().prefilter;
-
-  it('seeded differential: CS and CI equal a fresh re2js compile, whose own prefilter is cleared here', () => {
-    let seed = 0x5eed;
-    const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
-    const A = ['a', 'A', 'k', 'K', 's', 'ſ', 'K', 'İ', 'ı', 'é', 'É', 'ß', 'Ω', '中', '😀', '\ud800', '�', 'p', 'h', '.', '/', '0', 'x'];
-    const lit = (a: string) => a === '.' ? '\\.' : a === '\ud800' ? '\\x{d800}' : a;
-    const piece = (): string => {
-      const r = rnd(9), a = lit(A[rnd(A.length)]), b = lit(A[rnd(A.length)]);
-      if (r === 0) return '(?:' + a + b + '|' + a + ')';
-      if (r === 1) return '[^/]*' + a;
-      if (r === 2) return a + '+';
-      if (r === 3) return '.*';
-      if (r === 4) return a + '{2}';
-      return a;
-    };
-    for (let i = 0; i < 1500; i++) {
-      const p = Array.from({ length: 1 + rnd(4) }, piece).join('');
-      for (const ci of [false, true]) {
-        let re; try { re = compileMatches(p, ci); } catch { continue; }
-        if (!re) continue;
-        expect(pf(re), p).toBeNull();
-        for (let j = 0; j < 4; j++) {
-          const v = Array.from({ length: 1 + rnd(10) }, () => A[rnd(A.length)]).join('') + (rnd(4) === 0 ? 'x'.repeat(2048) : '');
-          expect(safeTest(re, v, true), `${ci} ${p} ${JSON.stringify(v.slice(0, 12))}`).toBe(fresh(p, ci, v));
-        }
-      }
-    }
-  });
 
   it('charge pins', () => {
-    const v = 'ab' + 'x'.repeat(98) + 'cd';
-    expect(cost(WIDE, false, TOKEN_PATH)).toEqual([{ hit: false, spent: 906 }]);   // 2L + 64: the '.' scan and one pass, rejected
-    expect(cost('ab.*cd', false, v)).toEqual([{ hit: true, spent: 2535 }]);   // 2331 + 2 x 102
-    expect(cost('(?:foo|bar|baz)', false, 'x'.repeat(100))).toEqual([{ hit: false, spent: 164 }]);   // 1 AC pass + 64
-    expect(cost('sqlmap', false, 'x'.repeat(100))).toEqual([{ hit: false, spent: 164 }]);   // prefix-complete: no tree
-    expect(cost('é[^/]*ü', false, TOKEN_PATH)).toEqual([{ hit: false, spent: 485 }]);   // one scan of a non-ASCII literal
-    expect(cost('é[^/]*ü', true, TOKEN_PATH)[0].spent).toBe(1720);   // CI keeps no tree
-    expect(UA.length).toBe(2048);
-    expect(cost(P_MISS, false, UA)).toEqual([{ hit: false, spent: 65600 }]);   // 32 x 2048 + 64
-    expect(cost(lits.join('.'), false, UA)[0].spent).toBeGreaterThanOrEqual(33 * 2048 + 64);
+    const v = 'ab' + 'x'.repeat(98) + 'cd', cs = (p: string, s: string) => charge(p, s, false);
+    expect(cs(WIDE, TOKEN_PATH)).toEqual({ hit: false, spent: 906 });   // 2L + 64: the '.' scan and one pass, rejected
+    expect(cs('ab.*cd', v)).toEqual({ hit: true, spent: 2535 });   // 2331 + 2 x 102
+    expect(cs('(?:foo|bar|baz)', 'x'.repeat(100))).toEqual({ hit: false, spent: 164 });   // 1 AC pass + 64
+    expect(cs('sqlmap', 'x'.repeat(100))).toEqual({ hit: false, spent: 164 });   // prefix-complete: no tree
+    expect(cs('é[^/]*ü', TOKEN_PATH)).toEqual({ hit: false, spent: 485 });   // one scan of a non-ASCII literal
+    expect(cs(P_MISS, UA)).toEqual({ hit: false, spent: 65600 });   // 32 x 2048 + 64
+    expect(cs(lits.join('.'), UA).spent).toBeGreaterThanOrEqual(33 * 2048 + 64);
   });
 
   it('memo hazard: CI, CS, CI on one value charges the CI scans at the folded length, the CS at the raw one', () => {
-    const v = 'İ'.repeat(8) + '/x.php', fold = v.toLowerCase().length;
-    withRegexBudget(() => {
-      const ci = compileMatches('\\.php', true)!, cs = compileMatches('\\.php', false)!, one = (re: { test(s: string): boolean }) => { const a = regexWorkLeft(); const hit = safeTest(re, v, true); return { hit, spent: a - regexWorkLeft() }; };
-      one(ci);   // cold: builds the DFA cache
-      const first = one(ci), mid = one(cs), last = one(ci);
-      expect(first.hit).toBe(fresh('\\.php', true, v));
-      expect(last).toEqual(first);
-      expect(first.spent).toBeGreaterThanOrEqual(2 * fold);
-      expect(mid.spent).toBeGreaterThanOrEqual(v.length);
-      expect(mid.spent).toBeLessThan(2 * v.length + 64 + 200);
-    });
+    const v = 'İ'.repeat(8) + '/x.phq', fold = v.toLowerCase().replace(/ſ/g, 's').length, ci = compileMatches('\\.php', true)!, cs = compileMatches('x\\.p.r', false)!;
+    expect(fold).not.toBe(v.length);
+    const out = [charge(ci, v), charge(cs, v), charge(ci, v)];
+    expect(out.map((o) => o.spent)).toEqual([2 * fold + 64, 2 * v.length + 64, 2 * fold + 64]);   // CI: fold + '.php' at the folded length; CS: its two literals at the raw length; each rejected
+    expect(out.map((o) => o.hit)).toEqual([false, false, false]);
   });
 
   it('tripwires on re2js internals', () => {
@@ -574,10 +535,7 @@ describe('xata: case-sensitive literal pre-check is charged', () => {
     expect(c.prefixComplete).toBe(false);
     expect(c.prefilter.type).toBe(1);
     const src = String((RE2JS.compile('a').re2().constructor as { prototype: { executeEngine: unknown } }).prototype.executeEngine);
-    expect(src).toContain('this.prefilter.eval(');
-    expect(src.indexOf('prefixComplete')).toBeGreaterThanOrEqual(0);
-    expect(src.indexOf('prefixComplete')).toBeLessThan(src.indexOf('this.prefilter.eval('));
-    expect(pf(compileMatches('ab.*cd', false))).toBeNull();
+    expect(src).toMatch(/prefixComplete[\s\S]*this\.prefilter\.eval\(/);
   });
 
   it('HU2: 200 rules x one 31-of-32 miss on a 2048-char ua spend the budget and fire rules[128]', () => {

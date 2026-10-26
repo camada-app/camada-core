@@ -159,7 +159,7 @@ export function jsToRe2(p: string): string {
 // camada-all-xata: a CS pattern's own tree ran uncharged inside re2js (up to 32 scans of the value per test). compileMatches takes it (unfolded; none for a prefix-complete
 // pattern, which re2js answers by indexOf before any tree) and clears re2js's copy; safeTest pre-checks CS on the raw value and counts every scan.
 interface Pf { type: number; str: string; subs: Pf[]; eval(input: unknown, pos: number): boolean; automaton16(): { searchUTF16(s: string, a: number, b: number): boolean } }
-let pfIn = '', pfFold = '', pfLast = '', pfScans = 0;   // pfIn: what PF_IN reads; pfFold: the fold of pfLast, written only by a fold (a walk tests the same few path forms against every rule)
+let pfIn = '', pfFold = '', pfLast = '', pfScans = 0;   // pfIn: what PF_IN reads (the fold for CI, the raw value for CS); pfFold/pfLast: the CI fold memo, written only by a fold (a walk tests the same few path forms against every rule)
 const PF_IN = { hasString: (f: Pf) => (pfScans++, pfIn.includes(f.str)), hasAnyString: (f: Pf) => (pfScans++, f.automaton16().searchUTF16(pfIn, 0, pfIn.length)) };   // re2js's prefilter input; an OR of literals is one pass of re2js's own Aho-Corasick
 function foldTree(f: Pf): Pf {   // re2js Prefilter types: 0 NONE, 1 EXACT, 2 AND, 3 OR; a literal with a non-ASCII char requires nothing, and so does an OR with such a choice
   if (f.type === 1) { if (/[^\x00-\x7f]/.test(f.str)) f.type = 0; else f.str = f.str.toLowerCase(); }
@@ -178,10 +178,10 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
   if (re) {   // outside the try: a failure here must throw, not be read as a refusal
     let pf: Pf | null = null;
     const r2 = re.re2() as ReturnType<RE2JS['re2']> & { prefilter?: Pf | null; prefixComplete?: boolean }, own = Object.hasOwn(r2, 'prefilter');
-    if (ci) { const t = (RE2JS.compile(src).re2() as { prefilter?: Pf | null }).prefilter; pf = t && typeof t.eval === 'function' && foldTree(t).type !== 0 ? t : null; }
-    else { const t = r2.prefixComplete === true ? null : r2.prefilter; pf = t && typeof t.eval === 'function' ? t : null; }   // CS: re2js's own tree, unfolded
+    const t = ci ? (RE2JS.compile(src).re2() as { prefilter?: Pf | null }).prefilter : r2.prefixComplete === true ? null : r2.prefilter;
+    pf = t && typeof t.eval === 'function' && (!ci || foldTree(t).type !== 0) ? t : null;   // CI folds a case-sensitive compile's tree; CS takes re2js's own, unfolded, none when prefix-complete (one indexOf in re2js, already in L + 64)
     r2.prefilter = null;   // re2js never scans uncharged again
-    const d = re.re2().dfa, clear = d.clearCache, match = d.match, step = d.step, n = re.re2().numberOfInstructions() + REGEX_STATE_WORK;
+    const d = r2.dfa, clear = d.clearCache, match = d.match, step = d.step, n = r2.numberOfInstructions() + REGEX_STATE_WORK;
     if (!own || typeof clear !== 'function' || typeof match !== 'function' || typeof step !== 'function' || typeof d.memBudget !== 'number' || typeof d.stateCount !== 'number') {
       WORK.set(re, { n, d: null, full: true, pf, ci });   // fail closed: re2js internals changed, so every test is charged the full worst case
       return re;
