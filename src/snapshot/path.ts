@@ -233,6 +233,7 @@ export function safeTest(re: { test(s: string): boolean }, v: string, onError: b
     else hit = re.test(v);
   } catch { hit = onError; }
   if (w) regexLeft -= pfScans * pfIn.length + (!ran ? REGEX_STATE_WORK : w.full || dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d!.memBudget + dfaSteps - s0);   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
+  pfIn = '';   // no raw ua or header value stays referenced after the test (the charge needed only its length)
   return hit;
 }
 

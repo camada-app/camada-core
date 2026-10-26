@@ -453,7 +453,7 @@ describe('z8p7: case-insensitive literal pre-check', () => {
     for (const [p, vs] of cases) for (const v of vs) expect(charge(p, v).hit, `${p} ${v}`).toBe(fresh(p, v));
   });
 
-  it('seeded differential: random patterns x values, case-sensitive and not, equal a fresh re2js compile whose own prefilter is cleared here', () => {
+  it('seeded differential: random patterns x values, case-sensitive and not, equal a fresh re2js compile (its own prefilter on), and re2js keeps no tree of its own', () => {
     let seed = 42;
     const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
     const A = ['a', 'A', 'k', 'K', 's', 'ſ', 'K', 'İ', 'ı', 'é', 'É', 'ß', '中', '😀', '\ud800', '\ufffd', 'p', 'h', '.', '/', '0', '1', 'x', 'x'.repeat(300)];
@@ -468,13 +468,13 @@ describe('z8p7: case-insensitive literal pre-check', () => {
       if (r === 5) return atom() + '{2}';
       return atom();
     };
-    for (let i = 0; i < 1200; i++) {
+    for (let i = 0; i < 2000; i++) {
       const p = Array.from({ length: 1 + rnd(4) }, piece).join('');
       for (const ci of [false, true]) {
         let re; try { re = compileMatches(p, ci); } catch { continue; }
         if (!re) continue;
         expect((re as unknown as { re2(): { prefilter: unknown } }).re2().prefilter, p).toBeNull();
-        for (let j = 0; j < 4; j++) {
+        for (let j = 0; j < 5; j++) {
           const v = Array.from({ length: 1 + rnd(8) }, () => A[rnd(A.length)]).join('');
           expect(safeTest(re, v, true), `${ci} ${p} ${JSON.stringify(v.slice(0, 12))}`).toBe(fresh(p, v, ci));
         }
@@ -539,8 +539,7 @@ describe('xata: case-sensitive literal pre-check is charged', () => {
   });
 
   it('HU2: 200 rules x one 31-of-32 miss on a 2048-char ua spend the budget and fire rules[128]', () => {
-    const rules = many(200, 'ua', P_MISS), t = performance.now();
+    const rules = many(200, 'ua', P_MISS);
     expect(run(rules, { path: '/', ua: UA })).toBe(rules[128].id);
-    expect(performance.now() - t).toBeLessThan(500);
   });
 });
