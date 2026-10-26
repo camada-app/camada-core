@@ -171,6 +171,13 @@ const foldValue = (v: string): string => v.toLowerCase().replace(/\u017f/g, 's')
 /** re2js' lazy DFA caches up to 8 MiB per pattern (200 wide rules held 1147 MiB); 64 KiB gives the same answers (a full cache is rebuilt or the NFA runs). */
 export const RE2_DFA_MAX_MEM = 65536;
 // camada-all-e20y: trimEdgeRepeats(src) drops/shrinks the top-level repeats at either edge of an RE2 source (see compileMatches). Anything it does not fully understand returns src unchanged.
+// a {n} {n,} {n,m} repeat at s[i] (no RegExp: the cve matcher counts V8 regex reads), else null
+const braceAt = (s: string, i: number): { len: number; min: number; max: number } | null => {
+  let j = i + 1;
+  const digits = (): string => { const b = j; while (s[j]! >= '0' && s[j]! <= '9') j++; return s.slice(b, j); };
+  const lo = digits(), hi = s[j] === ',' ? (j++, digits()) : undefined;
+  return lo && s[j] === '}' ? { len: j + 1 - i, min: Number(lo), max: hi === undefined ? Number(lo) : hi === '' ? Infinity : Number(hi) } : null;
+};
 const classEnd = (s: string, i: number): number => {   // s[i] is '[': index just past the closing ']', -1 to bail (an unescaped '[' inside, or unterminated)
   let j = i + 1;
   if (s[j] === '^') j++;
@@ -186,7 +193,7 @@ const atomEnd = (s: string, i: number): number => {   // index just past the ato
   const c = s[i]!;
   if (c === '[') return classEnd(s, i);
   if (c === '(') {
-    if (/^\(\?[a-zA-Z-]*\)/.test(s.slice(i, i + 40))) return -1;   // a bare (?i) flag setter
+    if (s[i + 1] === '?') { let j = i + 2; while (s[j]! === '-' || (s[j]! >= 'a' && s[j]! <= 'z') || (s[j]! >= 'A' && s[j]! <= 'Z')) j++; if (s[j] === ')') return -1; }   // a bare (?i) flag setter
     for (let j = i, depth = 0; j < s.length; j++) {
       if (s[j] === '\\') j++;
       else if (s[j] === '[') { if ((j = classEnd(s, j)) < 0) return -1; j--; }
@@ -202,11 +209,11 @@ const atomEnd = (s: string, i: number): number => {   // index just past the ato
       const m = (n === 'x' ? /^\\x(\{[0-9a-fA-F]+\}|[0-9a-fA-F]{2})/ : /^\\[pP](\{[^}]*\}|[A-Za-z])/).exec(s.slice(i, i + 80));
       return m ? i + m[0].length : -1;
     }
-    if (/[0-7]/.test(n)) return i + 1 + /^[0-7]{1,3}/.exec(s.slice(i + 1, i + 4))![0].length;
+    if (n >= '0' && n <= '7') return i + 1 + /^[0-7]{1,3}/.exec(s.slice(i + 1, i + 4))![0].length;
     if ('dDwWsSbBAzfnrtv'.includes(n)) return i + 2;
-    return /[A-Za-z0-9]/.test(n) ? -1 : i + 1 + String.fromCodePoint(s.codePointAt(i + 1)!).length;
+    return (n >= '0' && n <= '9') || (n >= 'a' && n <= 'z') || (n >= 'A' && n <= 'Z') ? -1 : i + 1 + String.fromCodePoint(s.codePointAt(i + 1)!).length;
   }
-  if (c === '|' || c === ')' || '*+?'.includes(c!) || (c === '{' && ((BRACE.lastIndex = i), BRACE.test(s)))) return -1;
+  if (c === '|' || c === ')' || '*+?'.includes(c!) || (c === '{' && braceAt(s, i))) return -1;
   return i + String.fromCodePoint(s.codePointAt(i)!).length;
 };
 export function trimEdgeRepeats(src: string): string {
@@ -214,9 +221,9 @@ export function trimEdgeRepeats(src: string): string {
   for (let i = 0; i < src.length;) {
     const e = atomEnd(src, i);
     if (e < 0) return src;
-    let q = '', min = 1, max = 1, m: RegExpExecArray | null;
+    let q = '', min = 1, max = 1, m: ReturnType<typeof braceAt>;
     if (src[e] === '*' || src[e] === '?' || src[e] === '+') { q = src[e]; min = q === '+' ? 1 : 0; max = q === '?' ? 1 : Infinity; }
-    else if (src[e] === '{' && ((BRACE.lastIndex = e), (m = BRACE.exec(src)))) { q = m[0]; min = Number(m[1]!); max = m[2] === undefined ? min : m[3] === '' ? Infinity : Number(m[3]); }
+    else if (src[e] === '{' && (m = braceAt(src, e))) { q = src.slice(e, e + m.len); ({ min, max } = m); }
     const k = e + q.length, lazy = q && src[k] === '?';
     u.push({ a: src.slice(i, e), q: q + (lazy ? '?' : ''), min, max });
     i = k + (lazy ? 1 : 0);
