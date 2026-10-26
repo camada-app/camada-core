@@ -5,9 +5,9 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
-import { compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
+import { ASTRAL_QUANT, ASTRAL_CLASS, compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = '7b8b586fbd5f80c4b02ca557595696c36393df34e962b66a56c989722fd489a7';
+const REGEX_LIMIT_VECTORS_SHA256 = 'b01e86bd2bead280081f58d31f7f517131d8cafa6144b8c27fe868e3c3959d56';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
@@ -347,4 +347,48 @@ describe('7ztr, 510r: a non-string or empty matches value never matches', () => 
       expect(r.rule).toBe('cr_blk');
     });
   }
+});
+
+// camada-all-k938: a written surrogate pair right before a quantifier is refused (JS repeats the low unit, RE2 the whole character)
+describe('k938: a quantifier right after a written surrogate pair', () => {
+  const QUANTS = ['?', '*', '+', '{2}', '{0,2}', '{1,}', '??', '*?', '+?', '{2}?'];
+  const PAIRS = ['\u{1F600}', '\\uD83D\\uDE00'];   // raw, then escaped
+  // a pair inside [ ] is camada-all-cfx4
+  const KEEP = ['x\u{1F600}y', 'x\\uD83D\\uDE00y', 'x\u{1F600}{y', 'x\u{1F600}{a}y', '(?:\u{1F600})?', '(\u{1F600})+', '\u{1F600}|a?'];
+  it('jsToRe2 throws ASTRAL_QUANT and compileMatches is null, raw and escaped, ci or not', () => {
+    for (const pair of PAIRS) for (const q of QUANTS) for (const ci of [false, true]) {
+      const p = 'x' + pair + q + 'y';
+      expect(() => jsToRe2(p), p).toThrow(ASTRAL_QUANT);
+      expect(compileMatches(p, ci), p).toBeNull();
+    }
+  });
+  it('the keep-working patterns still translate', () => {
+    for (const p of KEEP) { expect(() => jsToRe2(p), p).not.toThrow(); expect(compileMatches(p, false), p).not.toBeNull(); }
+  });
+  it('x(?:\u{1F600})?y answers as V8', () => {
+    const p = 'x(?:\u{1F600})?y', re = compileMatches(p, false)!;
+    for (const s of ['xy', 'x\u{1F600}y', 'x\u{1F600}\u{1F600}y']) expect(re.test(s), s).toBe(new RegExp(p).test(s));
+  });
+});
+
+// camada-all-cfx4: a raw surrogate pair inside [ ] is refused (JS reads the two units, RE2 one code point)
+describe('cfx4: a raw astral character inside [ ]', () => {
+  const E = '\u{1F600}';
+  const REF = [`x[${E}]y`, `x[${E}]?y`, `x[a${E}]y`, `x[${E}a]y`, `x[a-${E}]y`, `x[^${E}]y`, `x[${E}-\u{1F602}]y`, `x[\\]${E}]y`, `x[[${E}]y`, `[${E}]`, `x[${E}-￿]y`, `x[${E}]+y`, `x[a-${E}-\\d]y`];
+  const KEEP = ['x[a-z]y', 'x[\\x41-\\x5a]y', 'x[é]y', 'x[\\uD83D\\uDE00]y', 'x[^\\uD83D\\uDE00]y', 'x[\\uD83D]y', `x${E}y`, `x(?:${E})y`, `x(?:${E}|a)y`, `x(?:${E}|a)+y`, `x(?:${E})?y`, `x(?:[a-z]|${E})y`, `x\\[${E}]y`, `x[^]${E}y`, `x[]${E}y`];
+  it('jsToRe2 throws ASTRAL_CLASS and compileMatches is null, ci or not', () => {
+    for (const p of REF) for (const ci of [false, true]) {
+      expect(() => jsToRe2(p), p).toThrow(ASTRAL_CLASS);
+      expect(compileMatches(p, ci), p).toBeNull();
+    }
+  });
+  it('the keep-working patterns still translate and compile', () => {
+    for (const p of KEEP) { expect(() => jsToRe2(p), p).not.toThrow(); for (const ci of [false, true]) expect(compileMatches(p, ci), p).not.toBeNull(); }
+  });
+  it('the group-with-| rewrites answer as V8', () => {
+    for (const p of [`x(?:${E}|a)y`, `x(?:${E})?y`]) {
+      const re = compileMatches(p, false)!;
+      for (const s of ['xy', `x${E}y`, `x${E}${E}y`, 'xay']) expect(re.test(s), p + ' ' + s).toBe(new RegExp(p).test(s));
+    }
+  });
 });

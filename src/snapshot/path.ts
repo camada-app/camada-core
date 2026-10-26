@@ -93,6 +93,9 @@ export const pathHit = (pred: PathPred, forms: PathForms, deny: boolean): boolea
 const WS = '\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}';   // JS \s
 const NOT_WS = '\\x00-\\x08\\x0e-\\x1f\\x21-\\x9f\\x{a1}-\\x{167f}\\x{1681}-\\x{1fff}\\x{200b}-\\x{2027}\\x{202a}-\\x{202e}\\x{2030}-\\x{205e}\\x{2060}-\\x{2fff}\\x{3001}-\\x{fefe}\\x{ff00}-\\x{10ffff}';   // JS \S: the complement of the set above, for inside [ ]
 const SURR = /^[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}/;
+export const ASTRAL_QUANT = 'a quantifier right after a surrogate pair';
+export const ASTRAL_CLASS = 'a surrogate pair inside [ ]';
+const quantAt = (p: string, j: number) => '?*+'.includes(p[j]!) || (p[j] === '{' && ((BRACE.lastIndex = j), BRACE.test(p)));   // a ? * + or {n} {n,} {n,m} at p[j] (past the end p[j] is undefined, which matches neither)
 const HEX4 = /^[0-9a-fA-F]{4}/;
 const HEX2 = /^[0-9a-fA-F]{2}/;
 
@@ -108,6 +111,7 @@ export function jsToRe2(p: string): string {
       if (cls) { ce = 'sSdDwW'.includes(n); at = !rng; rng = false; }   // ce: the last atom in this class is \s \d \w or the like; rng: the - just read is a range operator, so the next atom (the range's high end) cannot start another range
       if ('AzQEpPa'.includes(n) || (n === 'B' && cls)) out += n;   // JS reads the bare letter (RE2: an anchor, quote or class); [\B] is a literal B
       else if (n === 'u' && !cls && SURR.test(p.slice(i + 1, i + 11))) {        // \uD83D\uDE00: how a non-u regex writes an astral character
+        if (quantAt(p, i + 11)) throw new SyntaxError(ASTRAL_QUANT);   // JS repeats the low unit only, RE2 the whole character
         out += '\\x{' + ((parseInt(p.substr(i + 1, 4), 16) - 0xd800) * 0x400 + parseInt(p.substr(i + 7, 4), 16) - 0xdc00 + 0x10000).toString(16) + '}';
         i += 10;
       }
@@ -128,6 +132,7 @@ export function jsToRe2(p: string): string {
       }
       else out += c + n;
     } else if (cls) {
+      if (p.codePointAt(i)! > 0xffff) throw new SyntaxError(ASTRAL_CLASS);   // JS reads the two units, RE2 one code point (camada-all-cfx4)
       if (c === ']') cls = false;
       else {
         if (c === '-' && at && p[i + 1] !== ']') {   // a range operator (not an atom); a - after a finished range, as in [a-b-\d], is a literal
@@ -142,6 +147,7 @@ export function jsToRe2(p: string): string {
       cls = true; ce = at = rng = false;
     }
     else if (c === '{' && (BRACE.lastIndex = i, m = BRACE.exec(p))) { out += m[0].replace(/\b0+(?=\d)/g, ''); i += m[0].length - 1; }   // a{02} is a{2} in JS but RE2 reads the text: strip leading zeros as text (never Number()), skip the brace
+    else if (p.codePointAt(i)! > 0xffff && quantAt(p, i + 2)) throw new SyntaxError(ASTRAL_QUANT);   // a raw pair, same
     else out += c === '.' ? '[^\\n\\r\\x{2028}\\x{2029}]' : c;
   }
   return RE2JS.translateRegExp(out);
