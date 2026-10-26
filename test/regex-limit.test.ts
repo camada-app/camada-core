@@ -567,11 +567,13 @@ describe('e20y: trimEdgeRepeats is exact for a test', () => {
     for (let i = 0; i < 3000; i++) {
       const p = rnd(6) ? seq() : `${seq()}|${seq()}`;
       const ins = Array.from({ length: 4 }, () => Array.from({ length: rnd(13) }, () => chars[rnd(chars.length)]).join(''));
+      let src: string;
+      try { src = jsToRe2(p); } catch { continue; }
       for (const ci of [false, true]) {
         let orig: RE2JS;
-        try { orig = RE2JS.compile(jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { continue; }
+        try { orig = RE2JS.compile(src, ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { continue; }
         compiled++;
-        if (trimEdgeRepeats(jsToRe2(p)) !== jsToRe2(p)) trimmed++;
+        if (trimEdgeRepeats(src) !== src) trimmed++;
         const re = compileMatches(p, ci)!;
         for (const s of ins) expect(re.test(s), `${p} ${ci} ${JSON.stringify(s)}`).toBe(orig.test(s));
       }
