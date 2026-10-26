@@ -157,7 +157,7 @@ export function jsToRe2(p: string): string {
 // (and gave up to the NFA on a long one) where the case-sensitive test answered after one scan. compileMatches gives a CI pattern re2js's own tree from a case-sensitive
 // compile, its literals lower-cased; safeTest reads it on the folded value and counts every scan.
 interface Pf { type: number; str: string; subs: Pf[]; eval(input: unknown, pos: number): boolean; automaton16(): { searchUTF16(s: string, a: number, b: number): boolean } }
-let pfVal = '', pfScans = 0;
+let pfVal = '', pfLast = '', pfScans = 0;   // pfLast: the value pfVal folds (a walk tests the same few path forms against every rule)
 const PF_IN = { hasString: (f: Pf) => (pfScans++, pfVal.includes(f.str)), hasAnyString: (f: Pf) => (pfScans++, f.automaton16().searchUTF16(pfVal, 0, pfVal.length)) };   // re2js's prefilter input; an OR of literals is one pass of re2js's own Aho-Corasick
 function foldTree(f: Pf): Pf {   // re2js Prefilter types: 0 NONE, 1 EXACT, 2 AND, 3 OR; a literal with a non-ASCII char requires nothing, and so does an OR with such a choice
   if (f.type === 1) { if (/[^\x00-\x7f]/.test(f.str)) f.type = 0; else f.str = f.str.toLowerCase(); }
@@ -175,11 +175,7 @@ export function compileMatches(p: string, ci: boolean): { test(s: string): boole
   try { re = RE2JS.compile(src = jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { /* fall through */ }
   if (re) {   // outside the try: a failure here must throw, not be read as a refusal
     let pf: Pf | null = null;
-    if (ci) {   // camada-all-z8p7: re2js's own tree from a case-sensitive compile, folded; its own CI prefilter (non-letter literals only) is cleared so the charge is exact
-      const t = (RE2JS.compile(src).re2() as { prefilter?: Pf | null }).prefilter;
-      (re.re2() as { prefilter?: Pf | null }).prefilter = null;
-      pf = t && typeof t.eval === 'function' && foldTree(t).type !== 0 ? t : null;
-    }
+    if (ci) { const t = (RE2JS.compile(src).re2() as { prefilter?: Pf | null }).prefilter; (re.re2() as { prefilter?: Pf | null }).prefilter = null; pf = t && typeof t.eval === 'function' && foldTree(t).type !== 0 ? t : null; }   // clearing re2js's own CI prefilter makes the charge exact
     const d = re.re2().dfa, clear = d.clearCache, match = d.match, step = d.step, n = re.re2().numberOfInstructions() + REGEX_STATE_WORK;
     if (typeof clear !== 'function' || typeof match !== 'function' || typeof step !== 'function' || typeof d.memBudget !== 'number' || typeof d.stateCount !== 'number') {
       WORK.set(re, { n, d: null, full: true, pf });   // fail closed: re2js internals changed, so every test is charged the full worst case
@@ -228,8 +224,8 @@ export function safeTest(re: { test(s: string): boolean }, v: string, onError: b
   let hit: boolean;
   pfScans = 0;
   try {
-    if (w?.pf) { pfVal = foldValue(v); pfScans = 1; }   // the fold is one pass
-    hit = w?.pf && !w.pf.eval(PF_IN, 0) ? false : re.test(v);
+    if (w?.pf) { if (v !== pfLast) pfVal = foldValue(pfLast = v); pfScans = 1; hit = w.pf.eval(PF_IN, 0) && re.test(v); }   // the fold is charged as one pass, memoised or not
+    else hit = re.test(v);
   } catch { hit = onError; }
   if (w) regexLeft -= pfScans * pfVal.length + (w.full || dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d!.memBudget + dfaSteps - s0);   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
   return hit;
