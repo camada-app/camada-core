@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
-import { ASTRAL_QUANT, ASTRAL_CLASS, compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
+import { regexWorkLeft, ASTRAL_QUANT, ASTRAL_CLASS, compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
 const REGEX_LIMIT_VECTORS_SHA256 = 'd549b323af4ba9b863a401a474da77baee46711832d1ef4241986bafc0bffc15';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
@@ -43,7 +43,7 @@ const hits = (rule: Rule, input: Record<string, Val>): boolean => {
 };
 
 const LT1 = V.linear_time.find((r) => r.id === 'LT1')!.rule.conds[0].v;
-const H1 = '/' + 'a'.repeat(2047), H3 = '/A/./' + 'a'.repeat(2043);   // 1 and 3 distinct path forms
+const H1 = '/z' + 'a'.repeat(2046), H3 = '/Z/./' + 'a'.repeat(2043);   // each carries the z LT1 requires, 1 and 3 distinct path forms (z8p7: a CI test of a value without it is rejected by the pre-check)
 const mk = (action: string, f: string, v: string, i: number): Rule => ({ id: `cr_${action}${f}${i}`, action, conds: [{ f, op: 'matches', v }] });
 const many = (n: number, f: string, v: string) => Array.from({ length: n }, (_, i) => mk('block', f, v, i));
 const res = (rules: Rule[], input: { path?: string; ua?: string }) => new Matcher(parseSnapshot(empty, { ...emptyMeta, rules })).match({ ip: '8.8.8.8', ...input } as never);
@@ -414,5 +414,83 @@ describe('cfx4: a raw astral character inside [ ]', () => {
       const re = compileMatches(p, false)!;
       for (const s of ['xy', `x${E}y`, `x${E}${E}y`, 'xay']) expect(re.test(s), p + ' ' + s).toBe(new RegExp(p).test(s));
     }
+  });
+});
+
+// camada-all-z8p7: a case-insensitive test checks the pattern's required literals on the case-folded value before re2js runs, and charges every scan at the value's length.
+describe('z8p7: case-insensitive literal pre-check', () => {
+  const P = '[^/]{256}\\.(?:php|aspx?|jsp)';
+  const BENIGN = '/download/' + 'aB3'.repeat(134) + '/report-2';   // 421 characters, no '.', so the pre-check rejects after the '.' literal
+  const charge = (p: string, v: string): { hit: boolean; spent: number } => withRegexBudget(() => {
+    const re = compileMatches(p, true)!, hit = safeTest(re, v, true);
+    return { hit, spent: REQUEST_REGEX_WORK - regexWorkLeft() };
+  });
+  const fresh = (p: string, v: string) => RE2JS.compile(jsToRe2(p), RE2JS.CASE_INSENSITIVE).test(v);
+
+  it('a benign path lacking the literal answers false, charged (fold + scans) x L + L + 64', () => {
+    const L = BENIGN.length;
+    expect(L).toBe(421);
+    expect(charge(P, BENIGN)).toEqual({ hit: false, spent: 2 * L + L + 64 });   // 1327: the fold and the '.' scan, then the L + 64 re2js call that never ran the DFA
+  });
+
+  it('round 3: 30 such rules and a later `\\.env$` block rule do not fire on a long benign download path', () => {
+    const v = '/download/' + 'aB3'.repeat(133) + '/report.pdf';
+    const rules = [...many(30, 'path', P), mk('block', 'path', '\\.env$', 30)];
+    expect(run(rules, { path: v })).toBeUndefined();
+  });
+
+  it('fold soundness: the answer equals a fresh case-insensitive compile', () => {
+    const cases: Array<[string, string[]]> = [
+      ['PHP', ['/x.php', '/X.PhP', '/x.pdf']],
+      ['ks', ['/Kſ', '/Ks', '/ks', '/k']],
+      ['é', ['/É', '/é', '/e']],
+      ['İ', ['/İ', '/i', '/I']],
+      ['\\.(?:PHP|aspx?)$', ['/a.ASP', '/a.aspx', '/a.ASPX', '/a.p']],
+      ['x[0]y', ['/x0y', '/X0Y', '/xy']],
+    ];
+    for (const [p, vs] of cases) for (const v of vs) expect(charge(p, v).hit, `${p} ${v}`).toBe(fresh(p, v));
+  });
+
+  it('seeded differential: 2000 random patterns x values equal a fresh case-insensitive compile', () => {
+    let seed = 42;
+    const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+    const A = ['a', 'A', 'k', 'K', 's', 'ſ', 'K', 'İ', 'é', 'É', 'p', 'h', '.', '/', '0', '1', 'x'];
+    const atom = () => { const a = A[rnd(A.length)]; return a === '.' ? '\\.' : a; };
+    const piece = (): string => {
+      const r = rnd(9);
+      if (r === 0) return '(?:' + atom() + atom() + '|' + atom() + ')';
+      if (r === 1) return '[' + atom() + atom() + ']';
+      if (r === 2) return atom() + '+';
+      if (r === 3) return atom() + '*';
+      if (r === 4) return '.' + '*';
+      if (r === 5) return atom() + '{2}';
+      return atom();
+    };
+    for (let i = 0; i < 2000; i++) {
+      const p = Array.from({ length: 1 + rnd(4) }, piece).join('');
+      const re = compileMatches(p, true);
+      if (!re) continue;
+      for (let j = 0; j < 5; j++) {
+        const v = Array.from({ length: 1 + rnd(8) }, () => A[rnd(A.length)]).join('');
+        expect(safeTest(re, v, true), `${p} ${JSON.stringify(v)}`).toBe(fresh(p, v));
+      }
+    }
+  });
+
+  it('charge pins: a passing AND adds 3 x L, an OR miss costs 2 x L + L + 64', () => {
+    const v = 'ab' + 'x'.repeat(98) + 'cd';
+    expect(charge('ab.*cd', v)).toEqual({ hit: true, spent: 2837 });   // 2531 without the pre-check + 3 x 102 (fold, 'ab', 'cd')
+    expect(charge('(?:foo|bar|baz)', 'x'.repeat(100))).toEqual({ hit: false, spent: 2 * 100 + 100 + 64 });   // fold + one Aho-Corasick pass
+  });
+
+  it('tripwire on re2js internals: the prefilter tree has the shape compileMatches reads', () => {
+    const a = RE2JS.compile('abc').re2().prefilter;
+    expect(a.type).toBe(1);
+    expect(a.str).toBe('abc');
+    const o = RE2JS.compile('(?:foo|bar)').re2().prefilter;
+    expect(o.type).toBe(3);
+    expect(o.subs.every((s: { type: number }) => s.type === 1)).toBe(true);
+    expect(typeof o.eval).toBe('function');
+    expect(typeof o.automaton16().searchUTF16).toBe('function');
   });
 });
