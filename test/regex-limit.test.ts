@@ -427,10 +427,10 @@ describe('z8p7: case-insensitive literal pre-check', () => {
   });
   const fresh = (p: string, v: string) => RE2JS.compile(jsToRe2(p), RE2JS.CASE_INSENSITIVE).test(v);
 
-  it('a benign path lacking the literal answers false, charged (fold + scans) x L + L + 64', () => {
+  it('a benign path lacking the literal answers false, charged (fold + scans) x L + 64', () => {
     const L = BENIGN.length;
     expect(L).toBe(421);
-    expect(charge(P, BENIGN)).toEqual({ hit: false, spent: 2 * L + L + 64 });   // 1327: the fold and the '.' scan, then the L + 64 re2js call that never ran the DFA
+    expect(charge(P, BENIGN)).toEqual({ hit: false, spent: 2 * L + 64 });   // 906: the fold and the '.' scan; the regex never ran
   });
 
   it('round 3: 30 such rules and a later `\\.env$` block rule do not fire on a long benign download path', () => {
@@ -477,10 +477,14 @@ describe('z8p7: case-insensitive literal pre-check', () => {
     }
   });
 
-  it('charge pins: a passing AND adds 3 x L, an OR miss costs 2 x L + L + 64', () => {
+  it('charge pins: a passing AND adds 3 x L, an OR miss costs 2 x L + 64', () => {
     const v = 'ab' + 'x'.repeat(98) + 'cd';
     expect(charge('ab.*cd', v)).toEqual({ hit: true, spent: 2837 });   // 2531 without the pre-check + 3 x 102 (fold, 'ab', 'cd')
-    expect(charge('(?:foo|bar|baz)', 'x'.repeat(100))).toEqual({ hit: false, spent: 2 * 100 + 100 + 64 });   // fold + one Aho-Corasick pass
+    expect(charge('(?:foo|bar|baz)', 'x'.repeat(100))).toEqual({ hit: false, spent: 2 * 100 + 64 });   // fold + one Aho-Corasick pass
+  });
+
+  it('an AND of only non-ASCII literals gets no pre-check and no fold charge', () => {
+    expect(charge('é[^/]*ü', BENIGN)).toEqual({ hit: fresh('é[^/]*ü', BENIGN), spent: 1720 });   // the DFA's own charge for this value; no fold term (a pre-check would add 421)
   });
 
   it('tripwire on re2js internals: the prefilter tree has the shape compileMatches reads', () => {

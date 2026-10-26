@@ -161,7 +161,7 @@ let pfVal = '', pfLast = '', pfScans = 0;   // pfLast: the value pfVal folds (a 
 const PF_IN = { hasString: (f: Pf) => (pfScans++, pfVal.includes(f.str)), hasAnyString: (f: Pf) => (pfScans++, f.automaton16().searchUTF16(pfVal, 0, pfVal.length)) };   // re2js's prefilter input; an OR of literals is one pass of re2js's own Aho-Corasick
 function foldTree(f: Pf): Pf {   // re2js Prefilter types: 0 NONE, 1 EXACT, 2 AND, 3 OR; a literal with a non-ASCII char requires nothing, and so does an OR with such a choice
   if (f.type === 1) { if (/[^\x00-\x7f]/.test(f.str)) f.type = 0; else f.str = f.str.toLowerCase(); }
-  else if (f.type > 1) { f.subs.forEach(foldTree); if (f.type === 3 && f.subs.some((s) => s.type === 0)) f.type = 0; }
+  else if (f.type > 1) { f.subs.forEach(foldTree); if (f.type === 3 ? f.subs.some((s) => s.type === 0) : f.subs.every((s) => s.type === 0)) f.type = 0; }
   return f;
 }
 const foldValue = (v: string): string => v.toLowerCase().replace(/\u017f/g, 's');   // re2js folds only U+212A (toLowerCase reads it as k) and U+017F (long s) onto ASCII letters
@@ -216,18 +216,18 @@ export function withRegexBudget<T>(f: () => T): T {
  *  Inside withRegexBudget a test runs while budget is left (regexLeft > 0), else it answers `onError` unrun. It is charged the full worst case (L+1)(n+64) when re2js's DFA
  *  gave up (the NFA then ran the whole input), else L+64 plus the DFA cache bytes built during the test (re2js's own per-state accounting, memBudget) plus, per DFA transition
  *  computed (real CPU), its source state's NFA-state count, and for one whose target was already cached (no new bytes) also its target's count + REGEX_STEP_WORK. A case-insensitive
- *  test first checks the pattern's required literals on the case-folded value (camada-all-z8p7): it adds (1 fold + literal scans) x the folded length to the charge; a rejected value costs only that + L+64. If the re2js internals wrapped
+ *  test first checks the pattern's required literals on the case-folded value (camada-all-z8p7): it adds (1 fold + literal scans) x the folded length to the charge; a rejected value (the regex never ran) costs only that + 64. If the re2js internals wrapped
  *  in compileMatches are missing, every test is charged the full worst case. */
 export function safeTest(re: { test(s: string): boolean }, v: string, onError: boolean): boolean {
   if (regexLeft <= 0) return onError;
   const w = WORK.get(re), g0 = dfaGiveUps, b0 = dfaBuilt, s0 = dfaSteps, m0 = w?.d?.memBudget ?? 0;
-  let hit: boolean;
+  let hit: boolean, ran = true;
   pfScans = 0;
   try {
-    if (w?.pf) { if (v !== pfLast) pfVal = foldValue(pfLast = v); pfScans = 1; hit = w.pf.eval(PF_IN, 0) && re.test(v); }   // the fold is charged as one pass, memoised or not
+    if (w?.pf) { if (v !== pfLast) pfVal = foldValue(pfLast = v); pfScans = 1; ran = w.pf.eval(PF_IN, 0); hit = ran && re.test(v); }   // the fold is charged as one pass, memoised or not
     else hit = re.test(v);
   } catch { hit = onError; }
-  if (w) regexLeft -= pfScans * pfVal.length + (w.full || dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d!.memBudget + dfaSteps - s0);   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
+  if (w) regexLeft -= pfScans * pfVal.length + (!ran ? REGEX_STATE_WORK : w.full || dfaGiveUps !== g0 ? (v.length + 1) * w.n : v.length + REGEX_STATE_WORK + dfaBuilt - b0 + m0 - w.d!.memBudget + dfaSteps - s0);   // the cache bytes built: those before each clear (dfaBuilt) plus the budget this test used since
   return hit;
 }
 
