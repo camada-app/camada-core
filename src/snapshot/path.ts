@@ -94,6 +94,7 @@ const WS = '\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202
 const NOT_WS = '\\x00-\\x08\\x0e-\\x1f\\x21-\\x9f\\x{a1}-\\x{167f}\\x{1681}-\\x{1fff}\\x{200b}-\\x{2027}\\x{202a}-\\x{202e}\\x{2030}-\\x{205e}\\x{2060}-\\x{2fff}\\x{3001}-\\x{fefe}\\x{ff00}-\\x{10ffff}';   // JS \S: the complement of the set above, for inside [ ]
 const SURR = /^[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}/;
 export const ASTRAL_QUANT = 'a quantifier right after a surrogate pair';
+export const ASTRAL_CLASS = 'a surrogate pair inside [ ]';
 const quantAt = (p: string, j: number) => '?*+'.includes(p[j]!) || (p[j] === '{' && ((BRACE.lastIndex = j), BRACE.test(p)));   // a ? * + or {n} {n,} {n,m} at p[j] (past the end p[j] is undefined, which matches neither)
 const HEX4 = /^[0-9a-fA-F]{4}/;
 const HEX2 = /^[0-9a-fA-F]{2}/;
@@ -131,6 +132,7 @@ export function jsToRe2(p: string): string {
       }
       else out += c + n;
     } else if (cls) {
+      if (p.codePointAt(i)! > 0xffff) throw new SyntaxError(ASTRAL_CLASS);   // JS reads the two units, RE2 one code point (camada-all-cfx4)
       if (c === ']') cls = false;
       else {
         if (c === '-' && at && p[i + 1] !== ']') {   // a range operator (not an atom); a - after a finished range, as in [a-b-\d], is a literal
