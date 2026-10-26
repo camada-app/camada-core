@@ -5,9 +5,9 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
-import { compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
+import { ASTRAL_QUANT, compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = '7b8b586fbd5f80c4b02ca557595696c36393df34e962b66a56c989722fd489a7';
+const REGEX_LIMIT_VECTORS_SHA256 = '2ec0fa002783163e1f1ccec65a759038e9486d2849437a819b3448f2f1b4e5c1';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
@@ -347,4 +347,25 @@ describe('7ztr, 510r: a non-string or empty matches value never matches', () => 
       expect(r.rule).toBe('cr_blk');
     });
   }
+});
+
+// camada-all-k938: a written surrogate pair right before a quantifier is refused (JS repeats the low unit, RE2 the whole character)
+describe('k938: a quantifier right after a written surrogate pair', () => {
+  const QUANTS = ['?', '*', '+', '{2}', '{0,2}', '{1,}', '??', '*?', '+?', '{2}?'];
+  const PAIRS = ['\u{1F600}', '\\uD83D\\uDE00'];   // raw, then escaped
+  const KEEP = ['x\u{1F600}y', 'x\\uD83D\\uDE00y', 'x\u{1F600}{y', 'x\u{1F600}{a}y', '(?:\u{1F600})?', '(\u{1F600})+', '\u{1F600}|a?', 'x[\u{1F600}]?y'];
+  it('jsToRe2 throws ASTRAL_QUANT and compileMatches is null, raw and escaped, ci or not', () => {
+    for (const pair of PAIRS) for (const q of QUANTS) for (const ci of [false, true]) {
+      const p = 'x' + pair + q + 'y';
+      expect(() => jsToRe2(p), p).toThrow(ASTRAL_QUANT);
+      expect(compileMatches(p, ci), p).toBeNull();
+    }
+  });
+  it('the keep-working patterns still translate', () => {
+    for (const p of KEEP) { expect(() => jsToRe2(p), p).not.toThrow(); expect(compileMatches(p, false), p).not.toBeNull(); }
+  });
+  it('x(?:\u{1F600})?y answers as V8', () => {
+    const p = 'x(?:\u{1F600})?y', re = compileMatches(p, false)!;
+    for (const s of ['xy', 'x\u{1F600}y', 'x\u{1F600}\u{1F600}y']) expect(re.test(s), s).toBe(new RegExp(p).test(s));
+  });
 });
