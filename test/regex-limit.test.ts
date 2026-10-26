@@ -5,9 +5,9 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
-import { regexWorkLeft, ASTRAL_QUANT, ASTRAL_CLASS, compileMatches, jsToRe2, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
+import { regexWorkLeft, ASTRAL_QUANT, ASTRAL_CLASS, compileMatches, jsToRe2, trimEdgeRepeats, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = 'd549b323af4ba9b863a401a474da77baee46711832d1ef4241986bafc0bffc15';
+const REGEX_LIMIT_VECTORS_SHA256 = 'b8628729ffe24963f3bf868842f77f644f57edeb7ec0f179208160e3060fffbb';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
@@ -27,6 +27,7 @@ const V = JSON.parse(raw.toString('utf8')) as {
   refused_rule: { id: string; action: string; field: string };
   accepted: string[];
   translate: Array<[string, string]>;
+  test_rewrite: Array<[string, string]>;
   translate_refused: string[];
 };
 
@@ -541,5 +542,52 @@ describe('xata: case-sensitive literal pre-check is charged', () => {
   it('HU2: 200 rules x one 31-of-32 miss on a 2048-char ua spend the budget and fire rules[128]', () => {
     const rules = many(200, 'ua', P_MISS);
     expect(run(rules, { path: '/', ua: UA })).toBe(rules[128].id);
+  });
+});
+
+// camada-all-e20y: compileMatches trims a pattern's top-level edge repeats; the answers must not change
+describe('e20y: trimEdgeRepeats is exact for a test', () => {
+  it.each(V.test_rewrite)('test_rewrite %s', (from, to) => {
+    expect(trimEdgeRepeats(jsToRe2(from))).toBe(to);
+  });
+
+  it('a refusal stays a refusal: the rewrite never rescues a pattern re2js refuses', () => {
+    expect(compileMatches('a{0,1001}b', false)).toBeNull();
+  });
+
+  it('3000 seeded patterns answer as the untrimmed compile', () => {
+    let seed = 20240611;
+    const rnd = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    const pick = <T,>(a: T[]): T => a[rnd(a.length)]!;
+    const atoms = ['a', 'b', '[ab]', '[^ ]', '(?:ab)', '(a|b)', '\\d', '.', '^', '$', '\\b', '#'], quants = ['', '*', '+', '?', '{0,3}', '{2}', '{1,3}', '{2,}', '*?', '+?'];
+    const unit = () => pick(atoms) + pick(quants);
+    const seq = () => Array.from({ length: 1 + rnd(4) }, unit).join('');
+    const chars = 'ab 1#\n';
+    let compiled = 0, trimmed = 0;
+    for (let i = 0; i < 3000; i++) {
+      const p = rnd(6) ? seq() : `${seq()}|${seq()}`;
+      const ins = Array.from({ length: 4 }, () => Array.from({ length: rnd(13) }, () => chars[rnd(chars.length)]).join(''));
+      let src: string;
+      try { src = jsToRe2(p); } catch { continue; }
+      for (const ci of [false, true]) {
+        let orig: RE2JS;
+        try { orig = RE2JS.compile(src, ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { continue; }
+        compiled++;
+        if (trimEdgeRepeats(src) !== src) trimmed++;
+        const re = compileMatches(p, ci)!;
+        for (const s of ins) expect(re.test(s), `${p} ${ci} ${JSON.stringify(s)}`).toBe(orig.test(s));
+      }
+    }
+    expect(compiled).toBeGreaterThan(3000);
+    expect(trimmed).toBeGreaterThan(1000);   // the fuzz does exercise the rewrite
+  });
+
+  it('round 4: six wide header rules no longer spend the request budget, so the next rule is not a false deny', () => {
+    const wide = '[^ ]{0,500}[#%]', cookie = 'a'.repeat(1536);
+    const spent = withRegexBudget(() => { for (let i = 0; i < 6; i++) safeTest(compileMatches(wide, false)!, cookie, true); return REQUEST_REGEX_WORK - regexWorkLeft(); });
+    expect(spent).toBeLessThan(100_000);
+    const c = (v: string) => ({ f: 'header', op: 'matches', name: 'cookie', v });
+    const rules = [...Array.from({ length: 6 }, (_, i) => ({ id: `cr_w${i}`, action: 'block', conds: [c(wide)] })), { id: 'cr_zzz', action: 'block', conds: [c('zzz')] }];
+    expect(new Matcher(parseSnapshot(empty, { ...emptyMeta, rules } as never)).match({ ip: '8.8.8.8', path: '/', ua: 'x', header: (n: string) => (n === 'cookie' ? cookie : null) } as never).rule).toBeUndefined();
   });
 });

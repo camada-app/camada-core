@@ -170,12 +170,91 @@ const foldValue = (v: string): string => v.toLowerCase().replace(/\u017f/g, 's')
 
 /** re2js' lazy DFA caches up to 8 MiB per pattern (200 wide rules held 1147 MiB); 64 KiB gives the same answers (a full cache is rebuilt or the NFA runs). */
 export const RE2_DFA_MAX_MEM = 65536;
+// camada-all-e20y: trimEdgeRepeats(src) drops/shrinks the top-level repeats at either edge of an RE2 source (see compileMatches). Anything it does not fully understand returns src unchanged.
+// No RegExp in these scanner helpers: the cve matcher counts V8 regex reads.
+// a {n} {n,} {n,m} repeat at s[i], else null
+const braceAt = (s: string, i: number): { len: number; min: number; max: number } | null => {
+  let j = i + 1;
+  const digits = (): string => { const b = j; while (s[j]! >= '0' && s[j]! <= '9') j++; return s.slice(b, j); };
+  const lo = digits(), hi = s[j] === ',' ? (j++, digits()) : undefined;
+  return lo && s[j] === '}' ? { len: j + 1 - i, min: Number(lo), max: hi === undefined ? Number(lo) : hi === '' ? Infinity : Number(hi) } : null;
+};
+const classEnd = (s: string, i: number): number => {   // s[i] is '[': index just past the closing ']', -1 to bail (an unescaped '[' inside, or unterminated)
+  let j = i + 1;
+  if (s[j] === '^') j++;
+  if (s[j] === ']') j++;
+  for (; j < s.length; j++) {
+    if (s[j] === '\\') j++;
+    else if (s[j] === '[') return -1;
+    else if (s[j] === ']') return j + 1;
+  }
+  return -1;
+};
+const atomEnd = (s: string, i: number): number => {   // index just past the atom at s[i], -1 to bail
+  const c = s[i]!;
+  if (c === '[') return classEnd(s, i);
+  if (c === '(') {
+    if (s[i + 1] === '?') { let j = i + 2; while (s[j]! === '-' || (s[j]! >= 'a' && s[j]! <= 'z') || (s[j]! >= 'A' && s[j]! <= 'Z')) j++; if (s[j] === ')') return -1; }   // a bare (?i) flag setter
+    for (let j = i, depth = 0; j < s.length; j++) {
+      if (s[j] === '\\') j++;
+      else if (s[j] === '[') { if ((j = classEnd(s, j)) < 0) return -1; j--; }
+      else if (s[j] === '(') depth++;
+      else if (s[j] === ')' && !--depth) return j + 1;
+    }
+    return -1;
+  }
+  if (c === '\\') {
+    const n = s[i + 1];
+    if (n === undefined) return -1;
+    if (n === 'x') {   // \x{hex+} or \x + 2 hex
+      const hex = (j: number) => s[j] !== undefined && '0123456789abcdefABCDEF'.includes(s[j]!);
+      if (s[i + 2] !== '{') return hex(i + 2) && hex(i + 3) ? i + 4 : -1;
+      let j = i + 3;
+      while (hex(j)) j++;
+      return j > i + 3 && s[j] === '}' ? j + 1 : -1;
+    }
+    if (n === 'p' || n === 'P') {   // \p{...} up to the first '}', or \p + one ASCII letter
+      if (s[i + 2] === '{') { const k = s.indexOf('}', i + 3); return k < 0 ? -1 : k + 1; }
+      return (s[i + 2]! >= 'a' && s[i + 2]! <= 'z') || (s[i + 2]! >= 'A' && s[i + 2]! <= 'Z') ? i + 3 : -1;
+    }
+    if (n >= '0' && n <= '7') { let j = i + 2; while (j < i + 4 && s[j]! >= '0' && s[j]! <= '7') j++; return j; }
+    if ('dDwWsSbBAzfnrtv'.includes(n)) return i + 2;
+    return (n >= '0' && n <= '9') || (n >= 'a' && n <= 'z') || (n >= 'A' && n <= 'Z') ? -1 : i + 1 + String.fromCodePoint(s.codePointAt(i + 1)!).length;
+  }
+  if ('|)*+?'.includes(c) || (c === '{' && braceAt(s, i))) return -1;
+  return i + String.fromCodePoint(s.codePointAt(i)!).length;
+};
+export function trimEdgeRepeats(src: string): string {
+  const u: { a: string; q: string; min: number; max: number }[] = [];   // { a: atom text, q: its quantifier + lazy mark, min, max }
+  for (let i = 0; i < src.length;) {
+    const e = atomEnd(src, i);
+    if (e < 0) return src;
+    let q = '', min = 1, max = 1, m: ReturnType<typeof braceAt>;
+    const c = src[e];
+    if (c && '*?+'.includes(c)) { q = c; min = q === '+' ? 1 : 0; max = q === '?' ? 1 : Infinity; }
+    else if (c === '{' && (m = braceAt(src, e))) { q = src.slice(e, e + m.len); ({ min, max } = m); }
+    if (q && src[e + q.length] === '?') q += '?';
+    u.push({ a: src.slice(i, e), q, min, max });
+    i = e + q.length;
+  }
+  // for a test anywhere in the value, a match using k >= m copies of an edge repeat contains a match of its m nearest copies, and m = 0 copies drop the unit
+  const shrink = (x: (typeof u)[number]) => { if (x.max !== x.min) { x.q = x.min === 1 ? '' : `{${x.min}}`; x.max = x.min; } };
+  while (u.length && !u[0]!.min) u.shift();
+  if (u.length) shrink(u[0]!);
+  while (u.length && !u[u.length - 1]!.min) u.pop();
+  if (u.length) shrink(u[u.length - 1]!);
+  return u.map((x) => x.a + x.q).join('');
+}
 /** A customer `matches` pattern as a linear-time matcher; null when re2js refuses it (a stored lookaround, backreference or count over 1000): such a
  *  pattern never matches, as in camada-go, and no native RegExp ever runs (camada-all-rfyr). */
 export function compileMatches(p: string, ci: boolean): { test(s: string): boolean } | null {
+  const flags = ci ? RE2JS.CASE_INSENSITIVE : 0;
   let re: RE2JS | undefined, src = '';
-  try { re = RE2JS.compile(src = jsToRe2(p), ci ? RE2JS.CASE_INSENSITIVE : 0); } catch { /* fall through */ }
+  try { re = RE2JS.compile(src = jsToRe2(p), flags); } catch { /* fall through */ }
   if (re) {   // outside the try: a failure here must throw, not be read as a refusal
+    // camada-all-e20y: a wide edge repeat with no required literal (`[^ ]{0,500}[#%]`) made the DFA give up on every test; trimEdgeRepeats is exact for .test, and a refusal stays a refusal
+    const trimmed = trimEdgeRepeats(src);
+    if (trimmed !== src) try { re = RE2JS.compile(trimmed, flags); src = trimmed; } catch { /* keep the original */ }
     let pf: Pf | null = null;
     const r2 = re.re2() as ReturnType<RE2JS['re2']> & { prefilter?: Pf | null; prefixComplete?: boolean }, own = Object.hasOwn(r2, 'prefilter');
     const t = ci ? (RE2JS.compile(src).re2() as { prefilter?: Pf | null }).prefilter : r2.prefixComplete === true ? null : r2.prefilter;
