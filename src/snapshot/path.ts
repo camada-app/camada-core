@@ -94,7 +94,7 @@ const WS = '\\t-\\r \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202
 const NOT_WS = '\\x00-\\x08\\x0e-\\x1f\\x21-\\x9f\\x{a1}-\\x{167f}\\x{1681}-\\x{1fff}\\x{200b}-\\x{2027}\\x{202a}-\\x{202e}\\x{2030}-\\x{205e}\\x{2060}-\\x{2fff}\\x{3001}-\\x{fefe}\\x{ff00}-\\x{10ffff}';   // JS \S: the complement of the set above, for inside [ ]
 const SURR = /^[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}/;
 export const ASTRAL_QUANT = 'a quantifier right after a surrogate pair';
-const quantAt = (p: string, j: number) => j < p.length && ('?*+'.includes(p[j]!) || (p[j] === '{' && ((BRACE.lastIndex = j), BRACE.test(p))));   // a ? * + or {n} {n,} {n,m} at p[j]; j < p.length because '?*+'.includes('') is true
+const quantAt = (p: string, j: number) => '?*+'.includes(p[j]!) || (p[j] === '{' && ((BRACE.lastIndex = j), BRACE.test(p)));   // a ? * + or {n} {n,} {n,m} at p[j] (past the end p[j] is undefined, which matches neither)
 const HEX4 = /^[0-9a-fA-F]{4}/;
 const HEX2 = /^[0-9a-fA-F]{2}/;
 
@@ -145,7 +145,7 @@ export function jsToRe2(p: string): string {
       cls = true; ce = at = rng = false;
     }
     else if (c === '{' && (BRACE.lastIndex = i, m = BRACE.exec(p))) { out += m[0].replace(/\b0+(?=\d)/g, ''); i += m[0].length - 1; }   // a{02} is a{2} in JS but RE2 reads the text: strip leading zeros as text (never Number()), skip the brace
-    else if (c >= '\uD800' && c <= '\uDBFF' && (p[i + 1] ?? '') >= '\uDC00' && (p[i + 1] ?? '') <= '\uDFFF' && quantAt(p, i + 2)) throw new SyntaxError(ASTRAL_QUANT);   // a raw pair, same
+    else if (p.codePointAt(i)! > 0xffff && quantAt(p, i + 2)) throw new SyntaxError(ASTRAL_QUANT);   // a raw pair, same
     else out += c === '.' ? '[^\\n\\r\\x{2028}\\x{2029}]' : c;
   }
   return RE2JS.translateRegExp(out);
