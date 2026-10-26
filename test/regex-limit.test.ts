@@ -383,7 +383,7 @@ describe('cfx4: a raw astral character inside [ ]', () => {
     }
   });
   it('the keep-working patterns still translate and compile', () => {
-    for (const p of KEEP) { expect(() => jsToRe2(p), p).not.toThrow(); expect(compileMatches(p, false), p).not.toBeNull(); }
+    for (const p of KEEP) { expect(() => jsToRe2(p), p).not.toThrow(); for (const ci of [false, true]) expect(compileMatches(p, ci), p).not.toBeNull(); }
   });
   it('the group-with-| rewrites answer as V8', () => {
     for (const p of [`x(?:${E}|a)y`, `x(?:${E})?y`]) {
