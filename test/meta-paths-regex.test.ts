@@ -9,7 +9,7 @@ const bin = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
 const meta = JSON.parse(readFileSync(at('v5-empty.meta.json'), 'utf8'));
 const V = JSON.parse(readFileSync(new URL('./fixtures/regex-limit/regex-limit-vectors.json', import.meta.url), 'utf8'));
 const LT1: string = V.linear_time.find((r: { id: string }) => r.id === 'LT1').rule.conds[0].v;   // the 1oqz wide pattern: re2js gives up to the NFA on a path of 'a's
-const H1 = '/' + 'a'.repeat(2047);
+const H1 = '/z' + 'a'.repeat(2046);   // carries the z LT1 requires (z8p7: a CI test of a value without it is rejected by the pre-check)
 const mk = (extra: object) => new Matcher(parseSnapshot(bin, { ...meta, ...extra }));
 const skipLt1 = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `cr_${i}`, action: 'skip', conds: [{ f: 'path', op: 'matches', v: LT1 }] }));
 
