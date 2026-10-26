@@ -353,7 +353,8 @@ describe('7ztr, 510r: a non-string or empty matches value never matches', () => 
 describe('k938: a quantifier right after a written surrogate pair', () => {
   const QUANTS = ['?', '*', '+', '{2}', '{0,2}', '{1,}', '??', '*?', '+?', '{2}?'];
   const PAIRS = ['\u{1F600}', '\\uD83D\\uDE00'];   // raw, then escaped
-  const KEEP = ['x\u{1F600}y', 'x\\uD83D\\uDE00y', 'x\u{1F600}{y', 'x\u{1F600}{a}y', '(?:\u{1F600})?', '(\u{1F600})+', '\u{1F600}|a?', 'x[\u{1F600}]?y'];
+  // a pair inside [ ] is camada-all-cfx4
+  const KEEP = ['x\u{1F600}y', 'x\\uD83D\\uDE00y', 'x\u{1F600}{y', 'x\u{1F600}{a}y', '(?:\u{1F600})?', '(\u{1F600})+', '\u{1F600}|a?'];
   it('jsToRe2 throws ASTRAL_QUANT and compileMatches is null, raw and escaped, ci or not', () => {
     for (const pair of PAIRS) for (const q of QUANTS) for (const ci of [false, true]) {
       const p = 'x' + pair + q + 'y';
