@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.1 (2026-10-28; follows 0.6.0)
+
+### Fixed
+
+- The regex-budget edge trim now reaches wide repeats inside a group or an alternation. A whole-pattern group (`(?:[^ ]{0,500}[#%])`), each top-level alternative (`[#%]|[^ ]{0,500}[#%]`) and a one-copy group at an edge followed by more atoms (`([^ ]{0,500})[#%]`) are trimmed, so six such rules no longer spend the request's regex budget and leave a later deny rule unrun. Answers are unchanged. A long alternation is split in one pass, so it no longer grows the stack. (camada-all-6vhn, camada-all-ddk6)
+- A pattern containing `\Q` is left untrimmed. (camada-all-fsnv)
+
 ## 0.6.0 (2026-10-26; follows 0.5.3)
 
 ### Fixed
