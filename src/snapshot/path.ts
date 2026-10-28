@@ -190,11 +190,13 @@ const classEnd = (s: string, i: number): number => {   // s[i] is '[': index jus
   }
   return -1;
 };
+const flagsEnd = (s: string, j: number): number => { while (s[j] === '-' || (s[j]! >= 'a' && s[j]! <= 'z') || (s[j]! >= 'A' && s[j]! <= 'Z')) j++; return j; };   // past a run of flag letters at s[j]
+const isWord = (c: string | undefined) => c !== undefined && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '_');
 const atomEnd = (s: string, i: number): number => {   // index just past the atom at s[i], -1 to bail
   const c = s[i]!;
   if (c === '[') return classEnd(s, i);
   if (c === '(') {
-    if (s[i + 1] === '?') { let j = i + 2; while (s[j]! === '-' || (s[j]! >= 'a' && s[j]! <= 'z') || (s[j]! >= 'A' && s[j]! <= 'Z')) j++; if (s[j] === ')') return -1; }   // a bare (?i) flag setter
+    if (s[i + 1] === '?' && s[flagsEnd(s, i + 2)] === ')') return -1;   // a bare (?i) flag setter
     for (let j = i, depth = 0; j < s.length; j++) {
       if (s[j] === '\\') j++;
       else if (s[j] === '[') { if ((j = classEnd(s, j)) < 0) return -1; j--; }
@@ -222,15 +224,14 @@ const atomEnd = (s: string, i: number): number => {   // index just past the ato
 };
 const groupOpen = (a: string): number => {   // length of the ( (?: (?flags: (?P<n> or (?<n> opener of group atom a, else 0 (lookarounds are not groups)
   if (a[1] !== '?') return 1;
-  const w = (c: string | undefined) => c !== undefined && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '_');
-  let j = 2;
-  if (a[2] === '<' || (a[2] === 'P' && a[3] === '<')) { j = a[2] === 'P' ? 4 : 3; const b = j; while (w(a[j])) j++; return j > b && a[j] === '>' ? j + 1 : 0; }
-  while (a[j] === '-' || (a[j]! >= 'a' && a[j]! <= 'z') || (a[j]! >= 'A' && a[j]! <= 'Z')) j++;
+  let j = a[2] === 'P' && a[3] === '<' ? 3 : 2;
+  if (a[j] === '<') { const b = ++j; while (isWord(a[j])) j++; return j > b && a[j] === '>' ? j + 1 : 0; }
+  j = flagsEnd(a, j);
   return a[j] === ':' ? j + 1 : 0;
 };
 export function trimEdgeRepeats(src: string, sides = 3): string {
   if (src.includes('\\Q')) return src;   // camada-all-fsnv: atomEnd misreads a quoted )
-  const u: { a: string; q: string; min: number; max: number; d?: boolean; c?: boolean }[] = [];   // { a: atom text, q: its quantifier + lazy mark, min, max, d: edge group handled, c: its inside was rewritten }
+  const u: { a: string; q: string; min: number; max: number; s: number; bare?: string | false }[] = [];   // { a: atom text, q: its quantifier + lazy mark, min, max, s: sides of its inside already trimmed, bare: its inside when a ( or (?: group may be unwrapped }
   const cuts: number[] = [];   // top-level | positions
   for (let i = 0; i < src.length;) {
     // a|b tests true iff a or b does: trim each side (one may trim to '')
@@ -242,32 +243,32 @@ export function trimEdgeRepeats(src: string, sides = 3): string {
     if (c && '*?+'.includes(c)) { q = c; min = q === '+' ? 1 : 0; max = q === '?' ? 1 : Infinity; }
     else if (c === '{' && (m = braceAt(src, e))) { q = src.slice(e, e + m.len); ({ min, max } = m); }
     if (q && src[e + q.length] === '?') q += '?';
-    u.push({ a: src.slice(i, e), q, min, max });
+    u.push({ a: src.slice(i, e), q, min, max, s: 0 });
     i = e + q.length;
   }
   if (cuts.length) return [-1, ...cuts].map((c, k) => trimEdgeRepeats(src.slice(c + 1, cuts[k]), sides)).join('|');
   // for a test anywhere in the value, a match using k >= m copies of an edge repeat contains a match of its m nearest copies, and m = 0 copies drop the unit
   const shrink = (x: (typeof u)[number]) => { if (x.max !== x.min) { x.q = x.min === 1 ? '' : `{${x.min}}`; x.max = x.min; } };
-  for (const left of [true, false]) {
-    if (!(sides & (left ? 1 : 2))) continue;
+  for (const side of [1, 2]) {
+    if (!(sides & side)) continue;
+    const left = side === 1;
     while (u.length) {
-      const x = u[left ? 0 : u.length - 1]!, drop = () => (left ? u.shift() : u.pop());
-      if (!x.min) { drop(); continue; }
+      const x = left ? u[0]! : u[u.length - 1]!;
+      if (!x.min) { left ? u.shift() : u.pop(); continue; }
       shrink(x);
-      // a one-copy group: its outer-edge part is an edge too (a sole unit is both edges: done once, with both sides)
-      const o = x.max === 1 && !x.d && x.a[0] === '(' ? groupOpen(x.a) : 0;
-      if (!o) break;
-      x.d = true;
-      const inner = x.a.slice(o, -1), t = trimEdgeRepeats(inner, u.length === 1 ? sides : left ? 1 : 2);
+      // a one-copy group: its outer-edge part is an edge too; a sole unit is both edges (x.s: sides of its inside already trimmed)
+      const o = x.max === 1 && x.a[0] === '(' ? groupOpen(x.a) : 0, m = o ? (u.length === 1 ? sides : side) & ~x.s : 0;
+      if (!m) break;
+      x.s |= m;
+      const inner = x.a.slice(o, -1), t = trimEdgeRepeats(inner, m);
       if (t === inner) break;
-      if (!t) { drop(); continue; }
-      x.a = x.a.slice(0, o) + t + ')'; x.q = ''; x.c = true;
+      if (!t) { left ? u.shift() : u.pop(); continue; }
+      x.a = x.a.slice(0, o) + t + ')'; x.q = ''; x.bare = (o === 1 || o === 3) && t;   // a ( or (?: group may be unwrapped
       break;
     }
   }
   // a ( or (?: group left as the whole pattern is unwrapped when its inside trimmed; a flag or named group stays
-  const g = u.length === 1 && u[0]!.c ? u[0]!.a : '';
-  if (g[1] !== '?' && g || g.startsWith('(?:')) return g.slice(g[1] === '?' ? 3 : 1, -1);
+  if (u.length === 1 && u[0]!.bare) return u[0]!.bare;
   return u.map((x) => x.a + x.q).join('');
 }
 /** A customer `matches` pattern as a linear-time matcher; null when re2js refuses it (a stored lookaround, backreference or count over 1000): such a
