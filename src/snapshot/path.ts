@@ -170,7 +170,7 @@ const foldValue = (v: string): string => v.toLowerCase().replace(/\u017f/g, 's')
 
 /** re2js' lazy DFA caches up to 8 MiB per pattern (200 wide rules held 1147 MiB); 64 KiB gives the same answers (a full cache is rebuilt or the NFA runs). */
 export const RE2_DFA_MAX_MEM = 65536;
-// camada-all-e20y: trimEdgeRepeats(src) drops/shrinks the top-level repeats at either edge of each top-level alternative (and of a whole-pattern (...)/(?:...) group's inside) of an RE2 source (see compileMatches). Anything it does not fully understand returns src unchanged.
+// camada-all-e20y: trimEdgeRepeats(src) drops/shrinks the repeats at the outer edges of each top-level alternative, and trims inside a one-copy edge group (( (?: (?flags: or named, opener kept) on its outer side only (both sides when it is the whole pattern); see compileMatches. Anything it does not fully understand returns src unchanged.
 // No RegExp in these scanner helpers: the cve matcher counts V8 regex reads.
 // a {n} {n,} {n,m} repeat at s[i], else null
 const braceAt = (s: string, i: number): { len: number; min: number; max: number } | null => {
@@ -220,9 +220,17 @@ const atomEnd = (s: string, i: number): number => {   // index just past the ato
   if ('|)*+?'.includes(c) || (c === '{' && braceAt(s, i))) return -1;
   return i + String.fromCodePoint(s.codePointAt(i)!).length;
 };
-export function trimEdgeRepeats(src: string): string {
+const groupOpen = (a: string): number => {   // length of the ( (?: (?flags: (?P<n> or (?<n> opener of group atom a, else 0 (lookarounds are not groups)
+  if (a[1] !== '?') return 1;
+  const w = (c: string | undefined) => c !== undefined && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c === '_');
+  let j = 2;
+  if (a[2] === '<' || (a[2] === 'P' && a[3] === '<')) { j = a[2] === 'P' ? 4 : 3; const b = j; while (w(a[j])) j++; return j > b && a[j] === '>' ? j + 1 : 0; }
+  while (a[j] === '-' || (a[j]! >= 'a' && a[j]! <= 'z') || (a[j]! >= 'A' && a[j]! <= 'Z')) j++;
+  return a[j] === ':' ? j + 1 : 0;
+};
+export function trimEdgeRepeats(src: string, sides = 3): string {
   if (src.includes('\\Q')) return src;   // camada-all-fsnv: atomEnd misreads a quoted )
-  const u: { a: string; q: string; min: number; max: number }[] = [];   // { a: atom text, q: its quantifier + lazy mark, min, max }
+  const u: { a: string; q: string; min: number; max: number; d?: boolean; c?: boolean }[] = [];   // { a: atom text, q: its quantifier + lazy mark, min, max, d: edge group handled, c: its inside was rewritten }
   const cuts: number[] = [];   // top-level | positions
   for (let i = 0; i < src.length;) {
     // a|b tests true iff a or b does: trim each side (one may trim to '')
@@ -237,17 +245,29 @@ export function trimEdgeRepeats(src: string): string {
     u.push({ a: src.slice(i, e), q, min, max });
     i = e + q.length;
   }
-  if (cuts.length) return [-1, ...cuts].map((c, k) => trimEdgeRepeats(src.slice(c + 1, cuts[k]))).join('|');
+  if (cuts.length) return [-1, ...cuts].map((c, k) => trimEdgeRepeats(src.slice(c + 1, cuts[k]), sides)).join('|');
   // for a test anywhere in the value, a match using k >= m copies of an edge repeat contains a match of its m nearest copies, and m = 0 copies drop the unit
   const shrink = (x: (typeof u)[number]) => { if (x.max !== x.min) { x.q = x.min === 1 ? '' : `{${x.min}}`; x.max = x.min; } };
-  while (u.length && !u[0]!.min) u.shift();
-  if (u.length) shrink(u[0]!);
-  while (u.length && !u[u.length - 1]!.min) u.pop();
-  if (u.length) shrink(u[u.length - 1]!);
-  // a group left as the whole pattern after the edge trim is unwrapped when its inside trims, else it stays
-  const g = u.length === 1 && !u[0]!.q ? u[0]!.a : '';
-  const k = g.startsWith('(?:') ? 3 : g[0] === '(' && g[1] !== '?' ? 1 : 0;
-  if (k) { const inner = g.slice(k, -1), t = trimEdgeRepeats(inner); if (t !== inner) return t; }
+  for (const left of [true, false]) {
+    if (!(sides & (left ? 1 : 2))) continue;
+    while (u.length) {
+      const x = u[left ? 0 : u.length - 1]!, drop = () => (left ? u.shift() : u.pop());
+      if (!x.min) { drop(); continue; }
+      shrink(x);
+      // a one-copy group: its outer-edge part is an edge too (a sole unit is both edges: done once, with both sides)
+      const o = x.max === 1 && !x.d && x.a[0] === '(' ? groupOpen(x.a) : 0;
+      if (!o) break;
+      x.d = true;
+      const inner = x.a.slice(o, -1), t = trimEdgeRepeats(inner, u.length === 1 ? sides : left ? 1 : 2);
+      if (t === inner) break;
+      if (!t) { drop(); continue; }
+      x.a = x.a.slice(0, o) + t + ')'; x.q = ''; x.c = true;
+      break;
+    }
+  }
+  // a ( or (?: group left as the whole pattern is unwrapped when its inside trimmed; a flag or named group stays
+  const g = u.length === 1 && u[0]!.c ? u[0]!.a : '';
+  if (g[1] !== '?' && g || g.startsWith('(?:')) return g.slice(g[1] === '?' ? 3 : 1, -1);
   return u.map((x) => x.a + x.q).join('');
 }
 /** A customer `matches` pattern as a linear-time matcher; null when re2js refuses it (a stored lookaround, backreference or count over 1000): such a
