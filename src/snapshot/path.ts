@@ -236,16 +236,16 @@ export function trimEdgeRepeats(src: string): string {
     u.push({ a: src.slice(i, e), q, min, max });
     i = e + q.length;
   }
-  // a whole-pattern unquantified (?:...) or plain (...) group: its inside trimmed, else the group stays
-  const g = u.length === 1 && !u[0]!.q ? u[0]!.a : '';
-  const k = g.startsWith('(?:') ? 3 : g[0] === '(' && g[1] !== '?' ? 1 : 0;
-  if (k) { const inner = g.slice(k, -1), t = trimEdgeRepeats(inner); return t !== inner ? t : src; }
   // for a test anywhere in the value, a match using k >= m copies of an edge repeat contains a match of its m nearest copies, and m = 0 copies drop the unit
   const shrink = (x: (typeof u)[number]) => { if (x.max !== x.min) { x.q = x.min === 1 ? '' : `{${x.min}}`; x.max = x.min; } };
   while (u.length && !u[0]!.min) u.shift();
   if (u.length) shrink(u[0]!);
   while (u.length && !u[u.length - 1]!.min) u.pop();
   if (u.length) shrink(u[u.length - 1]!);
+  // a group left as the whole pattern after the edge trim is unwrapped when its inside trims, else it stays
+  const g = u.length === 1 && !u[0]!.q ? u[0]!.a : '';
+  const k = g.startsWith('(?:') ? 3 : g[0] === '(' && g[1] !== '?' ? 1 : 0;
+  if (k) { const inner = g.slice(k, -1), t = trimEdgeRepeats(inner); if (t !== inner) return t; }
   return u.map((x) => x.a + x.q).join('');
 }
 /** A customer `matches` pattern as a linear-time matcher; null when re2js refuses it (a stored lookaround, backreference or count over 1000): such a

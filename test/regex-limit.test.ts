@@ -7,7 +7,7 @@ import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
 import { regexWorkLeft, ASTRAL_QUANT, ASTRAL_CLASS, compileMatches, jsToRe2, trimEdgeRepeats, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = '5170b6c2f37da4a9c892b45e344a0d5ae49a6d99c9a5bfe0659809b5b90df7a0';
+const REGEX_LIMIT_VECTORS_SHA256 = '2298be3b596814ae958d9016707eddf32f54a44bfd7567dfda6c488484546b13';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
@@ -587,7 +587,7 @@ describe('e20y: trimEdgeRepeats is exact for a test', () => {
     expect(trimmed).toBeGreaterThan(1000);   // the fuzz does exercise the rewrite
   });
 
-  it.each(['[^ ]{0,500}[#%]', '(?:[^ ]{0,500}[#%])', '([^ ]{0,500}[#%])', '[#%]|[^ ]{0,500}[#%]', '[^ ]{0,500}[#%]|zzz'])('round 4: six wide header rules (%s) no longer spend the request budget, so the next rule is not a false deny', (wide: string) => {
+  it.each(['[^ ]{0,500}[#%]', '(?:[^ ]{0,500}[#%])', '([^ ]{0,500}[#%])', '[#%]|[^ ]{0,500}[#%]', '[^ ]{0,500}[#%]|zzz', '(?:[^ ]{0,500}[#%])+', '(?:[^ ]{0,500}[#%]|zzz)x?'])('round 4: six wide header rules (%s) no longer spend the request budget, so the next rule is not a false deny', (wide: string) => {
     const cookie = 'a'.repeat(1536);
     const spent = withRegexBudget(() => { for (let i = 0; i < 6; i++) safeTest(compileMatches(wide, false)!, cookie, true); return REQUEST_REGEX_WORK - regexWorkLeft(); });
     expect(spent).toBeLessThan(100_000);
