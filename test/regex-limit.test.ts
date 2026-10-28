@@ -554,6 +554,9 @@ describe('e20y: trimEdgeRepeats is exact for a test', () => {
   it('\\Q anywhere leaves the source unchanged (camada-all-fsnv)', () => {
     for (const q of ['(?:\\Q)*(\\Q\\E)', 'a*\\Qb\\E']) expect(trimEdgeRepeats(q)).toBe(q);
   });
+  it('a long top-level alternation does not grow the stack (camada-all-6vhn)', () => {
+    expect(trimEdgeRepeats('a*|'.repeat(20000) + 'b')).toBe('|'.repeat(20000) + 'b');
+  });
 
   it('a refusal stays a refusal: the rewrite never rescues a pattern re2js refuses', () => {
     expect(compileMatches('a{0,1001}b', false)).toBeNull();

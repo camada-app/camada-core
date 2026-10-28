@@ -223,9 +223,10 @@ const atomEnd = (s: string, i: number): number => {   // index just past the ato
 export function trimEdgeRepeats(src: string): string {
   if (src.includes('\\Q')) return src;   // camada-all-fsnv: atomEnd misreads a quoted )
   const u: { a: string; q: string; min: number; max: number }[] = [];   // { a: atom text, q: its quantifier + lazy mark, min, max }
+  const cuts: number[] = [];   // top-level | positions
   for (let i = 0; i < src.length;) {
     // a|b tests true iff a or b does: trim each side (one may trim to '')
-    if (src[i] === '|') return trimEdgeRepeats(src.slice(0, i)) + '|' + trimEdgeRepeats(src.slice(i + 1));
+    if (src[i] === '|') { cuts.push(i++); continue; }
     const e = atomEnd(src, i);
     if (e < 0) return src;
     let q = '', min = 1, max = 1, m: ReturnType<typeof braceAt>;
@@ -236,6 +237,7 @@ export function trimEdgeRepeats(src: string): string {
     u.push({ a: src.slice(i, e), q, min, max });
     i = e + q.length;
   }
+  if (cuts.length) return [-1, ...cuts].map((c, k) => trimEdgeRepeats(src.slice(c + 1, cuts[k]))).join('|');
   // for a test anywhere in the value, a match using k >= m copies of an edge repeat contains a match of its m nearest copies, and m = 0 copies drop the unit
   const shrink = (x: (typeof u)[number]) => { if (x.max !== x.min) { x.q = x.min === 1 ? '' : `{${x.min}}`; x.max = x.min; } };
   while (u.length && !u[0]!.min) u.shift();
