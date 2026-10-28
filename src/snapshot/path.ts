@@ -170,7 +170,7 @@ const foldValue = (v: string): string => v.toLowerCase().replace(/\u017f/g, 's')
 
 /** re2js' lazy DFA caches up to 8 MiB per pattern (200 wide rules held 1147 MiB); 64 KiB gives the same answers (a full cache is rebuilt or the NFA runs). */
 export const RE2_DFA_MAX_MEM = 65536;
-// camada-all-e20y: trimEdgeRepeats(src) drops/shrinks the top-level repeats at either edge of an RE2 source (see compileMatches). Anything it does not fully understand returns src unchanged.
+// camada-all-e20y: trimEdgeRepeats(src) drops/shrinks the top-level repeats at either edge of each top-level alternative (and of a whole-pattern (...)/(?:...) group's inside) of an RE2 source (see compileMatches). Anything it does not fully understand returns src unchanged.
 // No RegExp in these scanner helpers: the cve matcher counts V8 regex reads.
 // a {n} {n,} {n,m} repeat at s[i], else null
 const braceAt = (s: string, i: number): { len: number; min: number; max: number } | null => {
@@ -213,10 +213,6 @@ const atomEnd = (s: string, i: number): number => {   // index just past the ato
       while (hex(j)) j++;
       return j > i + 3 && s[j] === '}' ? j + 1 : -1;
     }
-    if (n === 'p' || n === 'P') {   // \p{...} up to the first '}', or \p + one ASCII letter
-      if (s[i + 2] === '{') { const k = s.indexOf('}', i + 3); return k < 0 ? -1 : k + 1; }
-      return (s[i + 2]! >= 'a' && s[i + 2]! <= 'z') || (s[i + 2]! >= 'A' && s[i + 2]! <= 'Z') ? i + 3 : -1;
-    }
     if (n >= '0' && n <= '7') { let j = i + 2; while (j < i + 4 && s[j]! >= '0' && s[j]! <= '7') j++; return j; }
     if ('dDwWsSbBAzfnrtv'.includes(n)) return i + 2;
     return (n >= '0' && n <= '9') || (n >= 'a' && n <= 'z') || (n >= 'A' && n <= 'Z') ? -1 : i + 1 + String.fromCodePoint(s.codePointAt(i + 1)!).length;
@@ -225,8 +221,11 @@ const atomEnd = (s: string, i: number): number => {   // index just past the ato
   return i + String.fromCodePoint(s.codePointAt(i)!).length;
 };
 export function trimEdgeRepeats(src: string): string {
+  if (src.includes('\\Q')) return src;   // camada-all-fsnv: atomEnd misreads a quoted )
+  const cuts: number[] = [];   // top-level | positions
   const u: { a: string; q: string; min: number; max: number }[] = [];   // { a: atom text, q: its quantifier + lazy mark, min, max }
   for (let i = 0; i < src.length;) {
+    if (src[i] === '|') { cuts.push(i++); continue; }
     const e = atomEnd(src, i);
     if (e < 0) return src;
     let q = '', min = 1, max = 1, m: ReturnType<typeof braceAt>;
@@ -236,6 +235,14 @@ export function trimEdgeRepeats(src: string): string {
     if (q && src[e + q.length] === '?') q += '?';
     u.push({ a: src.slice(i, e), q, min, max });
     i = e + q.length;
+  }
+  // a|b tests true iff a or b does: trim each alternative (one may trim to '')
+  if (cuts.length) return [-1, ...cuts].map((c, k) => trimEdgeRepeats(src.slice(c + 1, cuts[k]))).join('|');
+  // a whole-pattern unquantified (?:...) or plain (...) group: its inside trimmed, else the group stays
+  const g = u.length === 1 && !u[0]!.q ? u[0]!.a : '';
+  if (g[0] === '(' && g[1] !== '?' || g.startsWith('(?:')) {
+    const inner = g.slice(g[1] === '?' ? 3 : 1, -1), t = trimEdgeRepeats(inner);
+    return t !== inner ? t : src;
   }
   // for a test anywhere in the value, a match using k >= m copies of an edge repeat contains a match of its m nearest copies, and m = 0 copies drop the unit
   const shrink = (x: (typeof u)[number]) => { if (x.max !== x.min) { x.q = x.min === 1 ? '' : `{${x.min}}`; x.max = x.min; } };

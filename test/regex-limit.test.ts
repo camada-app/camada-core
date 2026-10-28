@@ -7,7 +7,7 @@ import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
 import { regexWorkLeft, ASTRAL_QUANT, ASTRAL_CLASS, compileMatches, jsToRe2, trimEdgeRepeats, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = 'b8628729ffe24963f3bf868842f77f644f57edeb7ec0f179208160e3060fffbb';
+const REGEX_LIMIT_VECTORS_SHA256 = '5170b6c2f37da4a9c892b45e344a0d5ae49a6d99c9a5bfe0659809b5b90df7a0';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
@@ -551,6 +551,10 @@ describe('e20y: trimEdgeRepeats is exact for a test', () => {
     expect(trimEdgeRepeats(jsToRe2(from))).toBe(to);
   });
 
+  it('\\Q anywhere leaves the source unchanged (camada-all-fsnv)', () => {
+    for (const q of ['(?:\\Q)*(\\Q\\E)', 'a*\\Qb\\E']) expect(trimEdgeRepeats(q)).toBe(q);
+  });
+
   it('a refusal stays a refusal: the rewrite never rescues a pattern re2js refuses', () => {
     expect(compileMatches('a{0,1001}b', false)).toBeNull();
   });
@@ -559,13 +563,13 @@ describe('e20y: trimEdgeRepeats is exact for a test', () => {
     let seed = 20240611;
     const rnd = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
     const pick = <T,>(a: T[]): T => a[rnd(a.length)]!;
-    const atoms = ['a', 'b', '[ab]', '[^ ]', '(?:ab)', '(a|b)', '\\d', '.', '^', '$', '\\b', '#'], quants = ['', '*', '+', '?', '{0,3}', '{2}', '{1,3}', '{2,}', '*?', '+?'];
+    const atoms = ['a', 'b', '[ab]', '[^ ]', '(?:ab)', '(a|b)', '\\d', '.', '^', '$', '\\b', '#', '\\x{62}', '\\pL', '\\141', '[]a]', '{', '(?i:a)'], quants = ['', '*', '+', '?', '{0,3}', '{2}', '{1,3}', '{2,}', '*?', '+?'];
     const unit = () => pick(atoms) + pick(quants);
     const seq = () => Array.from({ length: 1 + rnd(4) }, unit).join('');
     const chars = 'ab 1#\n';
     let compiled = 0, trimmed = 0;
     for (let i = 0; i < 3000; i++) {
-      const p = rnd(6) ? seq() : `${seq()}|${seq()}`;
+      const body = rnd(6) ? seq() : `${seq()}|${seq()}`, w = rnd(4), p = w === 1 ? `(?:${body})` : w === 2 ? `(${body})` : body;   // some whole-group-wrapped
       const ins = Array.from({ length: 4 }, () => Array.from({ length: rnd(13) }, () => chars[rnd(chars.length)]).join(''));
       let src: string;
       try { src = jsToRe2(p); } catch { continue; }
@@ -582,8 +586,8 @@ describe('e20y: trimEdgeRepeats is exact for a test', () => {
     expect(trimmed).toBeGreaterThan(1000);   // the fuzz does exercise the rewrite
   });
 
-  it('round 4: six wide header rules no longer spend the request budget, so the next rule is not a false deny', () => {
-    const wide = '[^ ]{0,500}[#%]', cookie = 'a'.repeat(1536);
+  it.each(['[^ ]{0,500}[#%]', '(?:[^ ]{0,500}[#%])', '([^ ]{0,500}[#%])', '[#%]|[^ ]{0,500}[#%]', '[^ ]{0,500}[#%]|zzz'])('round 4: six wide header rules (%s) no longer spend the request budget, so the next rule is not a false deny', (wide: string) => {
+    const cookie = 'a'.repeat(1536);
     const spent = withRegexBudget(() => { for (let i = 0; i < 6; i++) safeTest(compileMatches(wide, false)!, cookie, true); return REQUEST_REGEX_WORK - regexWorkLeft(); });
     expect(spent).toBeLessThan(100_000);
     const c = (v: string) => ({ f: 'header', op: 'matches', name: 'cookie', v });
