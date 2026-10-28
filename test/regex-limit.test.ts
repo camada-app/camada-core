@@ -7,7 +7,7 @@ import { RE2JS } from 're2js';
 import { parseSnapshot, Matcher } from '../src/index.js';
 import { regexWorkLeft, ASTRAL_QUANT, ASTRAL_CLASS, compileMatches, jsToRe2, trimEdgeRepeats, MAX_MATCH_INPUT, pathPred, REGEX_STATE_WORK, REGEX_STEP_WORK, REQUEST_REGEX_WORK, RE2_DFA_MAX_MEM, safeTest, withRegexBudget } from '../src/snapshot/path.js';
 
-const REGEX_LIMIT_VECTORS_SHA256 = '2298be3b596814ae958d9016707eddf32f54a44bfd7567dfda6c488484546b13';
+const REGEX_LIMIT_VECTORS_SHA256 = 'f74b088b497bffbdf716f16d160ca1757f38c8da49629d06e5f56f32a8aabc9b';
 const at = (f: string) => new URL(`./fixtures/${f}`, import.meta.url);
 const raw = readFileSync(at('regex-limit/regex-limit-vectors.json'));
 const bytes = (f: string) => { const b = readFileSync(at(`blk5/${f}`)); return new Uint8Array(b.buffer, b.byteOffset, b.byteLength); };
@@ -554,6 +554,9 @@ describe('e20y: trimEdgeRepeats is exact for a test', () => {
   it('\\Q anywhere leaves the source unchanged (camada-all-fsnv)', () => {
     for (const q of ['(?:\\Q)*(\\Q\\E)', 'a*\\Qb\\E']) expect(trimEdgeRepeats(q)).toBe(q);
   });
+  it('a lookaround opener is not a group: its inside is not trimmed', () => {
+    for (const q of ['(?=a*)b', '(?<=a*)b', '(?!a*)b', 'b(?<!a*)']) expect(trimEdgeRepeats(q)).toBe(q);
+  });
   it('a long top-level alternation does not grow the stack (camada-all-6vhn)', () => {
     expect(trimEdgeRepeats('a*|'.repeat(20000) + 'b')).toBe('|'.repeat(20000) + 'b');
   });
@@ -566,14 +569,14 @@ describe('e20y: trimEdgeRepeats is exact for a test', () => {
     let seed = 20240611;
     const rnd = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
     const pick = <T,>(a: T[]): T => a[rnd(a.length)]!;
-    const atoms = ['a', 'b', '[ab]', '[^ ]', '(?:ab)', '(a|b)', '\\d', '.', '^', '$', '\\b', '#', '\\x{62}', '\\pL', '\\141', '[]a]', '{', '(?i:a)'], quants = ['', '*', '+', '?', '{0,3}', '{2}', '{1,3}', '{2,}', '*?', '+?'];
+    const atoms = ['a', 'b', '[ab]', '[^ ]', '(?:ab)', '(a|b)', '\\d', '.', '^', '$', '\\b', '#', '\\x{62}', '\\pL', '\\141', '[]a]', '{', '(?i:a)', '(a*b)', '(?:b|a+)', '(?i:a?b)'], quants = ['', '*', '+', '?', '{0,3}', '{2}', '{1,3}', '{2,}', '*?', '+?'];
     const unit = () => pick(atoms) + pick(quants);
     const seq = () => Array.from({ length: 1 + rnd(4) }, unit).join('');
     const chars = 'ab 1#\n';
     let compiled = 0, trimmed = 0;
     for (let i = 0; i < 3000; i++) {
       const body = rnd(6) ? seq() : `${seq()}|${seq()}`;
-      const p = pick([body, `(?:${body})`, `(${body})`, body]);   // some whole-group-wrapped
+      const p = pick([body, `(?:${body})`, `(${body})`, body, `(?:${body})${seq()}`, `${seq()}(${body})`]);   // some whole-group-wrapped, some an edge group beside more atoms
       const ins = Array.from({ length: 4 }, () => Array.from({ length: rnd(13) }, () => chars[rnd(chars.length)]).join(''));
       let src: string;
       try { src = jsToRe2(p); } catch { continue; }
@@ -590,7 +593,7 @@ describe('e20y: trimEdgeRepeats is exact for a test', () => {
     expect(trimmed).toBeGreaterThan(1000);   // the fuzz does exercise the rewrite
   });
 
-  it.each(['[^ ]{0,500}[#%]', '(?:[^ ]{0,500}[#%])', '([^ ]{0,500}[#%])', '[#%]|[^ ]{0,500}[#%]', '[^ ]{0,500}[#%]|zzz', '(?:[^ ]{0,500}[#%])+', '(?:[^ ]{0,500}[#%]|zzz)x?'])('round 4: six wide header rules (%s) no longer spend the request budget, so the next rule is not a false deny', (wide: string) => {
+  it.each(['[^ ]{0,500}[#%]', '(?:[^ ]{0,500}[#%])', '([^ ]{0,500}[#%])', '[#%]|[^ ]{0,500}[#%]', '[^ ]{0,500}[#%]|zzz', '(?:[^ ]{0,500}[#%])+', '(?:[^ ]{0,500}[#%]|zzz)x?', '(?:[^ ]{0,500})[#%]', '(?i:[^ ]{0,500}[#%])', '(?:[^ ]{0,500}[#%]){1}', '([^ ]{0,500})[#%]'])('round 4: six wide header rules (%s) no longer spend the request budget, so the next rule is not a false deny', (wide: string) => {
     const cookie = 'a'.repeat(1536);
     const spent = withRegexBudget(() => { for (let i = 0; i < 6; i++) safeTest(compileMatches(wide, false)!, cookie, true); return REQUEST_REGEX_WORK - regexWorkLeft(); });
     expect(spent).toBeLessThan(100_000);
