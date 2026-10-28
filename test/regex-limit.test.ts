@@ -569,7 +569,8 @@ describe('e20y: trimEdgeRepeats is exact for a test', () => {
     const chars = 'ab 1#\n';
     let compiled = 0, trimmed = 0;
     for (let i = 0; i < 3000; i++) {
-      const body = rnd(6) ? seq() : `${seq()}|${seq()}`, w = rnd(4), p = w === 1 ? `(?:${body})` : w === 2 ? `(${body})` : body;   // some whole-group-wrapped
+      const body = rnd(6) ? seq() : `${seq()}|${seq()}`;
+      const p = pick([body, `(?:${body})`, `(${body})`, body]);   // some whole-group-wrapped
       const ins = Array.from({ length: 4 }, () => Array.from({ length: rnd(13) }, () => chars[rnd(chars.length)]).join(''));
       let src: string;
       try { src = jsToRe2(p); } catch { continue; }
