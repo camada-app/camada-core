@@ -18,6 +18,28 @@
   },
   "name": "@camada/core",
   "description": "camada SDK core: BLK snapshot parser/matcher (v3-v5, ordered custom rules), snapshot client, event queue, redaction, trusted-proxy IP resolution",
+  "homepage": "https://www.camada.app/bot-detection",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/camada-app/camada-core.git"
+  },
+  "bugs": {
+    "url": "https://github.com/camada-app/camada-core/issues"
+  },
+  "keywords": [
+    "camada",
+    "bot-detection",
+    "bot-protection",
+    "credential-stuffing",
+    "account-takeover",
+    "rate-limiting",
+    "proof-of-work",
+    "ai-scraper",
+    "blocklist",
+    "trusted-proxy",
+    "security",
+    "typescript"
+  ],
   "exports": {
     ".": {
       "import": {

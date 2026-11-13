@@ -1,23 +1,25 @@
 # @camada/core
 
+[Bot detection](https://www.camada.app/bot-detection) · [Docs](https://www.camada.app/docs) · [Bot signal test](https://www.camada.app/tools/bot-test) · [Pricing](https://www.camada.app/pricing).
+
 The shared substrate of the camada backend SDKs: the BLK snapshot parser and matcher (a 1:1
 port of the edge collector's `blocklist.js`, pinned by golden conformance fixtures generated
 from the reference implementation), the `/snapshot` polling client, the batched event queue,
 the redaction layer, and trusted-proxy client-IP resolution.
 
-Applications don't install this directly — use [`@camada/node`](../camada-node),
-[`@camada/next`](../camada-next), [`@camada/hono`](../camada-hono), or one of the Web-fetch
+Applications don't install this directly. Use [`@camada/node`](https://github.com/camada-app/camada-node),
+[`@camada/next`](https://github.com/camada-app/camada-next), [`@camada/hono`](https://github.com/camada-app/camada-hono), or one of the Web-fetch
 adapters (`@camada/sveltekit`, `@camada/nuxt`, `@camada/remix`, `@camada/bun`, `@camada/deno`).
 Those depend on it, so `npm install` of any of them brings it along.
 
 ## What's inside
 
-- **`parseSnapshot(bin, meta)` / `Matcher`** — sub-microsecond checks (IPv4/IPv6 ranges,
+- **`parseSnapshot(bin, meta)` / `Matcher`**: sub-microsecond checks (IPv4/IPv6 ranges,
   ASN, country, TLS fingerprint, path, user agent, request headers). At the SDK position only
   `ip`, `path`, `ua` and the headers are normally known, so ASN/country/TLS entries and
   conditions simply never match there: the SDK enforces what it can see and **fails open** on
   everything else. ~5 MB of typed arrays resident per loaded snapshot.
-- **Custom rules (snapshot v5)** — the tenant's ordered rule list travels in the container
+- **Custom rules (snapshot v5)**: the tenant's ordered rule list travels in the container
   (sections 14/15 + `meta.rules`) and is compiled into predicates at parse time. `match()` walks
   the rules first and the **order is the precedence**: first match wins, and only if nothing
   matched does it fall through to the allow → block → challenge sides. The four actions:
@@ -25,8 +27,8 @@ Those depend on it, so `npm install` of any of them brings it along.
   `warn` passes and stamps the event. A rule outcome carries `action`, `rule` (the id) and
   `reason: 'rule'`; at most one of `allowed` / `block` / `challenge` / `warn` is ever true. A
   condition the request cannot answer (no `ua`, no header getter, no `asn`/`country`/`tlsx` off
-  Cloudflare) is false for every operator, negatives included — the rule then does not fire.
-- **Path matching is canonical** — pass the raw request path (still percent-encoded, query
+  Cloudflare) is false for every operator, negatives included, so the rule does not fire.
+- **Path matching is canonical**: pass the raw request path (still percent-encoded, query
   allowed). Both it and every published path value are canonicalised (`src/snapshot/path.ts`,
   contracts §D3): printable `%XX` decoded except `%2F`, ASCII lower-cased, `;params` cut, `//`
   and a trailing `/` dropped, `.`/`..` resolved. So `/%62locked-path`, `/BLOCKED-PATH`,
@@ -34,12 +36,12 @@ Those depend on it, so `npm install` of any of them brings it along.
   covers `/locked` itself, and path regexes are case-insensitive. A block, challenge or warn
   fires on any spelling; an allow entry or a `skip` needs both canonical spellings, so
   `/public/../admin` never borrows `/public/`'s exemption.
-- **Header conditions** — a rule may read one request header (`is`, `contains`, `matches`).
+- **Header conditions**: a rule may read one request header (`is`, `contains`, `matches`).
   Pass `header: (name) => string | null` on the `MatchInput`; it is always called with a
   lower-cased name, so the name a rule was written with never has to match the wire spelling.
   Headers are the request plane's alone: the analyst cannot judge one and treats such a rule as
   not matching, so a header rule is enforced by v5 SDKs only.
-- **`SnapshotClient`** — polls `GET /snapshot` (Bearer snapshot token) every 30 s off the
+- **`SnapshotClient`**: polls `GET /snapshot` (Bearer snapshot token) every 30 s off the
   request path with `If-None-Match`; 304 keeps the snapshot and still refreshes tenant config;
   204 means "nothing published" (enforce nothing); any error keeps the previous snapshot and
   paces the next poll (max(`retry-after`, 5 s), capped at the refresh interval).
@@ -48,13 +50,13 @@ Those depend on it, so `npm install` of any of them brings it along.
   `timer` mode for long-lived Node processes, `lazy` mode for serverless/edge (`ensureFresh`
   per request; cold start fails open). With the `sdk` option every poll carries
   `x-camada-sdk: <package>/<version>` so the analyst can show versions and nudge upgrades.
-- **`EventQueue`** — batched fire-and-forget shipping to `POST /e` (≤1000 per POST), bounded
+- **`EventQueue`**: batched fire-and-forget shipping to `POST /e` (≤1000 per POST), bounded
   queue with drop-oldest, interval + size-triggered flush, opt-in Node exit drain. The same `sdk`
   option stamps `x-camada-sdk` on every batch. Nothing in the queue may ever throw into the
   request path.
-- **`buildWireEvent`** — the collector-compatible wire shape, including the pinned `HDRS`
+- **`buildWireEvent`**: the collector-compatible wire shape, including the pinned `HDRS`
   header-bitmask order and the wire header order (`hord`) only an in-app SDK can see.
-- **Redaction (non-configurable-off)** — `Authorization`/`Cookie` values never leave (scheme
+- **Redaction (non-configurable-off)**: `Authorization`/`Cookie` values never leave (scheme
   and count only; a schemeless `Authorization` value ships nothing at all), credential-looking
   query parts become `~r` (in the request's own query and in the `Referer`'s query and
   fragment, `scrubUrl`; paths are not rewritten, in either). Names and values are
@@ -66,7 +68,7 @@ Those depend on it, so `npm install` of any of them brings it along.
   `bodyShape` and `REDACT_ALLOWLIST` are staging for app-context body capture (a later phase);
   no SDK captures request bodies today. This package is open source so these claims are
   auditable.
-- **`resolveClientIp`** — socket peer by default; `X-Forwarded-For` is only consulted under an
+- **`resolveClientIp`**: socket peer by default; `X-Forwarded-For` is only consulted under an
   explicit trusted-proxy config (`hops` / `cidrs` / `vercel`), so a spoofed XFF can't reach the
   analysis or the blocklist. XFF entries may carry a port (`ip:port`, `[v6]:port`) and may be
   IPv4-mapped (`::ffff:a.b.c.d`, read as `a.b.c.d`). In `cidrs`
@@ -78,7 +80,7 @@ Those depend on it, so `npm install` of any of them brings it along.
   null for one request whose peer it cannot read. The result is always a valid IP or null: a
   non-IP peer (a unix socket path, `ip:port`, a zone id) resolves to null and never walks XFF.
 
-## `@camada/core/fetch` — the shared Web-fetch pipeline
+## `@camada/core/fetch`: the shared Web-fetch pipeline
 
 Since 0.3.0 (SDK-G04) the request pipeline every Web-`Request`/`Response` adapter needs lives
 here, as a second entry point, so a new runtime is a thin binding rather than a copy of
@@ -127,7 +129,7 @@ waitUntil, signal })` from the main entry is the same rule, for pipelines of the
 (`@camada/hono`). It returns `res` itself whenever it does not wrap.
 
 The client address is an already-resolved `ip` the host vouches for, else the socket `peer`
-and `X-Forwarded-For` under the trusted-proxy rules — never a bare header. `track(vars, …)` and
+and `X-Forwarded-For` under the trusted-proxy rules, never a bare header. `track(vars, …)` and
 `scriptTag(vars)` are the app-facing helpers, keyed on the vars the adapter kept. `mode: 'timer'`
 polls on an unref'd interval and installs the exit flush (long-lived hosts); the default `lazy`
 refreshes per request through `waitUntil` (edge and serverless); `CAMADA_SERVERLESS=1` forces
@@ -147,3 +149,14 @@ changes.
 ```
 npm install && npm run build && npm test && npm run check
 ```
+
+## Docs and links
+
+Read the guides on [camada.app](https://www.camada.app/docs).
+
+- [Bot detection](https://www.camada.app/bot-detection): see how snapshots, beacons, and `track()` catch bots in your app.
+- [Custom rules](https://www.camada.app/docs/rules): write ordered rules for IP, path, user agent, and headers.
+- [Challenge](https://www.camada.app/docs/challenge): see how the 16-bit SHA-256 browser check works.
+- [Frameworks](https://www.camada.app/frameworks): pick the adapter for your server or edge runtime.
+- [Bot signal test](https://www.camada.app/tools/bot-test): check live browser, HTTP, and TLS signals from your client.
+- [Pricing](https://www.camada.app/pricing): compare the free tier and paid plans.
