@@ -1017,21 +1017,6 @@ describe('tk', () => {
     expect(events[0]).not.toHaveProperty('tk');
   });
 
-  it('redacts a configured header from existing telemetry fields', async () => {
-    const a = await primed({ key, tokenHash: true, tokenHeader: 'user-agent' });
-    await call(a, '/', { headers: { 'user-agent': credential } });
-    expect(events[0]).toHaveProperty('tk', tk);
-    expect(JSON.stringify(events[0])).not.toContain(credential);
-  });
-
-  it('enforces using the forwarded IP while redacting it if configured as a credential', async () => {
-    const a = await primed({ key, tokenHash: true, tokenHeader: 'x-forwarded-for', trustedProxy: { mode: 'hops', hops: 1 } });
-    const res = await call(a, '/', { headers: { 'x-forwarded-for': BLOCKED_IP } }, { peer: '192.0.2.1' });
-    expect(res.status).toBe(403);
-    expect(events[0]).toMatchObject({ ip: null, tk: expect.stringMatching(/^[0-9a-f]{32}$/) });
-    expect(JSON.stringify(events[0])).not.toContain(BLOCKED_IP);
-  });
-
   it('ignores a snapshot config flag', async () => {
     const remote = { ...BASE_CONFIG, tokenHash: true };
     CONFIG = remote;

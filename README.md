@@ -56,10 +56,11 @@ Those depend on it, so `npm install` of any of them brings it along.
   request path.
 - **`buildWireEvent`**: the collector-compatible wire shape, including the pinned `HDRS`
   header-bitmask order and the wire header order (`hord`) only an in-app SDK can see.
-- **Redaction (non-configurable-off)**: The SDK ships the `Authorization` scheme and cookie
-  count only by default. The opt-in `tokenHash` adds a keyed credential hash. Raw credentials
-  stay in-process. Credential-looking query parts become `~r` in the request's query and in
-  the `Referer`'s query and fragment (`scrubUrl`). Both paths are preserved. Names and values are
+- **Redaction (non-configurable-off)**: `Authorization`/`Cookie` values never leave (scheme
+  and count only; a schemeless `Authorization` value ships nothing at all; with the opt-in
+  `tokenHash` below, a keyed hash of the credential ships as `tk`, never the credential),
+  credential-looking query parts become `~r` (in the request's own query and in the `Referer`'s query and
+  fragment, `scrubUrl`; paths are not rewritten, in either). Names and values are
   percent-decoded before the test, and a value that decodes to a nested query (`?`, `&` or `=`)
   is dropped whole when any of its segments is a credential (`next=/reset?token=…`, an encoded
   `redirect_uri` carrying a `code`); other values, attack payloads included, stay readable for the
