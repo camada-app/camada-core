@@ -4,6 +4,7 @@
 import { parseKey } from '../config.js';
 import { parseTrustedProxyEnv, type TrustedProxyConfig } from '../ip.js';
 import type { SnapshotVersion } from '../constants.js';
+import { resolveTokenHash, type TokenHashConfig, type TokenHashOptions } from '../token.js';
 
 export interface ResolvedFetchEnv {
   ingestToken: string;
@@ -13,9 +14,10 @@ export interface ResolvedFetchEnv {
   snapshotUrl: string;
   trustedProxy: TrustedProxyConfig | null;   // null = defer to server-delivered config
   mode: 'lazy' | 'timer';                    // lazy: ensureFresh per request (edge/serverless); timer: unref'd poll (long-lived)
+  tokenHash: TokenHashConfig | null;
 }
 
-export interface FetchCamadaOptions {
+export interface FetchCamadaOptions extends TokenHashOptions {
   key?: string;
   ingestUrl?: string;
   snapshotUrl?: string;
@@ -48,5 +50,6 @@ export function resolveFetchEnv(opts: FetchCamadaOptions, env: Record<string, st
     snapshotUrl: opts.snapshotUrl || env.CAMADA_SNAPSHOT_URL || `${ingestUrl}/snapshot`,
     trustedProxy: asProxy(opts.trustedProxy) ?? parseTrustedProxyEnv(env.CAMADA_TRUSTED_PROXY),
     mode: env.CAMADA_SERVERLESS === '1' ? 'lazy' : opts.mode ?? 'lazy',
+    tokenHash: resolveTokenHash(opts, env),
   };
 }
