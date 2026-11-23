@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { createHmac } from 'node:crypto';
 import { scrubQuery, scrubUrl, bodyShape, hashUserId, buildWireEvent } from '../src/index.js';
 
 // Shared conformance fixture (contract C6): every server SDK runs the same cases.
@@ -7,6 +8,9 @@ interface RefCase { id: string; referer: string | null; ref: string | null; abse
 const refFx = JSON.parse(readFileSync(new URL('./fixtures/redact/referer.json', import.meta.url), 'utf8')) as { cases: RefCase[] };
 interface QCase { id: string; query: string; q: string; absent?: string[] }
 const qFx = JSON.parse(readFileSync(new URL('./fixtures/redact/query.json', import.meta.url), 'utf8')) as { cases: QCase[] };
+// tk vectors (contracts §D): header extraction is each SDK's conformance test; this pins the hash column.
+interface TkCase { id: string; key: string; credential: string | null; tk: string | null }
+const tkFx = JSON.parse(readFileSync(new URL('./fixtures/redact/token.json', import.meta.url), 'utf8')) as { cases: TkCase[] };
 
 describe('Referer redaction conformance (fixtures/redact/referer.json)', () => {
   it.each(refFx.cases.map((c) => [c.id, c] as const))('%s', (_label, c) => {
@@ -88,6 +92,13 @@ describe('hashUserId', () => {
     expect(a).not.toBe(await hashUserId('bob@example.com', 'tok-1'));
     expect(a).toMatch(/^[0-9a-f]{32}$/);
     expect(a).not.toContain('alice');
+  });
+});
+
+describe('credential hash vectors (fixtures/redact/token.json)', () => {
+  it('ids are unique', () => expect(new Set(tkFx.cases.map((c) => c.id)).size).toBe(tkFx.cases.length));
+  it.each(tkFx.cases.map((c) => [c.id, c] as const))('%s', (_label, c) => {
+    expect(c.tk).toBe(c.credential === null ? null : createHmac('sha256', c.key).update('tok:' + c.credential).digest('hex').slice(0, 32));
   });
 });
 
