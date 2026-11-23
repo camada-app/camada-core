@@ -5,7 +5,8 @@
 // fixtures if the format intentionally changed.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { parseSnapshot, Matcher, HDRS, buildWireEvent, type MatchInput, type MatchResult } from '../src/index.js';
+import { parseSnapshot, Matcher, HDRS, buildWireEvent, TAP_BUN, normalizeTokenHeader, requestTokenHash, resolveTokenHash, tokenCredential, type MatchInput, type MatchResult } from '../src/index.js';
+import { createFetchCamada } from '../src/fetch.js';
 
 const at = (dir: string) => (f: string) => new URL(`./fixtures/${dir}/${f}`, import.meta.url);
 const fx = at('blk3'), fx5 = at('blk5');
@@ -26,6 +27,8 @@ const input5 = (c: Case5): MatchInput => ({ ...c.input, header: (n) => c.input.h
 const cases = json('cases.json') as Record<'v3' | 'v4', Record<'basic' | 'empty', Case[]>>;
 const cases5 = (json5('cases.json') as { v5: Record<'rules' | 'empty', Case5[]> }).v5;
 const hdrs = json('hdrs.json') as { hdrs: string[]; cases: Array<{ names: string[]; hm: number }> };
+interface TokenCase { id: string; key: string; tokenHeader: string | null; headers: Record<string, string>; credential: string | null; tk: string | null }
+const tokens = JSON.parse(readFileSync(at('redact')('token.json'), 'utf8')) as { cases: TokenCase[] };
 
 const matcher = (name: string) => new Matcher(parseSnapshot(bin(`${name}.bin`), json(`${name}.meta.json`)));
 const matcher5 = (name: string) => new Matcher(parseSnapshot(read(fx5(`${name}.bin`)), json5(`${name}.meta.json`)));
@@ -143,5 +146,35 @@ describe('HDRS bitmask conformance', () => {
       { tap: 'sdk-node', rid: 'r' },
     );
     expect(ev.hm).toBe(c.hm);
+  });
+});
+
+describe('credential hash conformance', () => {
+  it.each(tokens.cases)('$id', async (c) => {
+    const get = (name: string) => c.headers[name] ?? null;
+    const opts = { tokenHash: true, tokenHeader: c.tokenHeader };
+    expect(tokenCredential(get, normalizeTokenHeader(c.tokenHeader))).toBe(c.credential);
+    expect(await requestTokenHash(get, resolveTokenHash(opts, {}), c.key)).toBe(c.tk);
+
+    const events: Array<Record<string, unknown>> = [];
+    const waits: Promise<unknown>[] = [];
+    const cam = createFetchCamada({ tap: TAP_BUN, sdk: '@camada/test', iife: '' }, {
+      ...opts, key: c.key + '.snap',
+      fetchImpl: async (url, init) => {
+        if (String(url).endsWith('/snapshot')) return new Response(null, { status: 204 });
+        events.push(...JSON.parse(String(init?.body)));
+        return new Response(null, { status: 202 });
+      },
+    });
+    try {
+      const req = new Request('https://app.test/', { headers: c.headers });
+      const r = await cam.before(req, { waitUntil: (p) => { waits.push(p); } });
+      cam.after(req, r!.vars!, 200);
+      await Promise.all(waits);
+      expect(events).toHaveLength(1);
+      if (c.tk === null) expect(events[0]).not.toHaveProperty('tk');
+      else expect(events[0]).toHaveProperty('tk', c.tk);
+      if (c.credential) expect(JSON.stringify(events[0])).not.toContain(c.credential);
+    } finally { cam.reset(); }
   });
 });

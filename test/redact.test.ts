@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { createHmac } from 'node:crypto';
-import { scrubQuery, scrubUrl, bodyShape, hashUserId, buildWireEvent } from '../src/index.js';
+import { scrubQuery, scrubUrl, bodyShape, hashUserId, hashToken, buildWireEvent } from '../src/index.js';
 
 // Shared conformance fixture (contract C6): every server SDK runs the same cases.
 interface RefCase { id: string; referer: string | null; ref: string | null; absent?: string[] }
@@ -100,8 +99,8 @@ describe('credential hash vectors (fixtures/redact/token.json)', () => {
     expect(tkFx.cases.length).toBeGreaterThanOrEqual(5);
     expect(new Set(tkFx.cases.map((c) => c.id)).size).toBe(tkFx.cases.length);
   });
-  it.each(tkFx.cases.map((c) => [c.id, c] as const))('%s', (_label, c) => {
-    expect(c.tk).toBe(c.credential === null ? null : createHmac('sha256', c.key).update('tok:' + c.credential).digest('hex').slice(0, 32));
+  it.each(tkFx.cases.filter((c) => c.tk !== null))('$id', async (c) => {
+    expect(await hashToken(c.credential!, c.key)).toBe(c.tk);
   });
 });
 

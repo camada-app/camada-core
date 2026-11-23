@@ -122,8 +122,8 @@ async function call(a: App, path: string, init: RequestInit = {}, ctx: FetchRequ
   return new Response(body, res);
 }
 
-function postSolution(a: App, addr: string, body: string): Promise<Response> {
-  return call(a, '/__camada/challenge', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body }, ip(addr));
+function postSolution(a: App, addr: string, body: string, headers: Record<string, string> = {}): Promise<Response> {
+  return call(a, '/__camada/challenge', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers }, body }, ip(addr));
 }
 
 /** The first request is cold (fail open) and loads the snapshot. */
@@ -794,17 +794,20 @@ describe('copyResponse under @hono/node-server', () => {
 });
 
 describe('after() reads only the vars', () => {
-  it('ships the event once the request is closed (Deno.upgradeWebSocket), with the status it is given', async () => {
-    const a = await primed();
-    const req = new Request('http://app.test/ws', { headers: { upgrade: 'websocket', 'user-agent': 'ws-client' } });
+  it.each([undefined, true])('ships after upgrade with tokenHash=%s and the status it is given', async (tokenHash) => {
+    const a = await primed({ tokenHash, key: 'ct_test_fixture_key.snap-acme' });
+    const req = new Request('http://app.test/ws', {
+      headers: { upgrade: 'websocket', 'user-agent': 'ws-client', authorization: 'Bearer fake-token-0001-not-a-real-credential' },
+    });
     const waits: Promise<unknown>[] = [];
     const r = await a.cam.before(req, { ...ip('8.8.8.8'), waitUntil: (p) => { waits.push(p); } });
     for (const k of ['headers', 'url', 'method']) Object.defineProperty(req, k, { get: () => { throw new TypeError('Request closed'); } });
     a.cam.after(req, r!.vars!, 101);
-    await new Promise((res) => setTimeout(res, 0));
     await Promise.all(waits);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ p: '/ws', m: 'GET', ua: 'ws-client', st: 101, rid: r!.vars!.rid, ts: r!.vars!.t0 });
+    if (tokenHash) expect(events[0]).toHaveProperty('tk', 'b3a18c6c56d5a2f7ad636bf950a919d7');
+    else expect(events[0]).not.toHaveProperty('tk');
   });
 });
 
@@ -831,7 +834,7 @@ describe('first-party beacon', () => {
 
   it('strips SDK-attested keys a visitor puts in the beacon body', async () => {
     const a = await primed();
-    const forged = Object.fromEntries(['tlsx', 'ja4', 'asn', 'cc', 'sid', 'ns', 'st', 'dur', 'rt', 'blk', 'rl', 'wrn', 'chs', 'ch', 'et', 'uid'].map((k) => [k, 'forged']));
+    const forged = Object.fromEntries(['tlsx', 'ja4', 'asn', 'cc', 'sid', 'ns', 'st', 'dur', 'rt', 'blk', 'rl', 'wrn', 'chs', 'ch', 'et', 'uid', 'tk', 'bf', 'upf'].map((k) => [k, 'forged']));
     const res = await postBeacon(a, JSON.stringify({ rid: 'abc', tz: 'UTC', ...forged }));
     expect(res.status).toBe(204);
     expect(events).toHaveLength(1);
@@ -952,6 +955,119 @@ describe('track', () => {
   });
 });
 
+describe('tk', () => {
+  const credential = 'fake-token-0001-not-a-real-credential';
+  const headers = { authorization: `Bearer ${credential}` };
+  const tk = 'b3a18c6c56d5a2f7ad636bf950a919d7';
+  const key = 'ct_test_fixture_key.snap-acme';
+
+  it.each([undefined, true])('applies tokenHash=%s to capture, block, challenge and verify rows', async (tokenHash) => {
+    const a = await primed({ key, tokenHash });
+    expect((await call(a, '/', { headers })).status).toBe(200);
+    expect((await call(a, '/', { headers }, ip(BLOCKED_IP))).status).toBe(403);
+    const page = await call(a, '/cart', { headers: { ...HTML, ...headers } }, ip(CHALLENGED_IP));
+    expect(page.status).toBe(403);
+    const nonce = nonceOf(await page.text());
+    expect((await postSolution(a, CHALLENGED_IP, `nonce=${nonce}&solution=${solve(nonce)}&to=%2Fcart`, headers)).status).toBe(302);
+    expect((await call(a, '/cart', { headers }, ip(CHALLENGED_IP))).headers.get('x-camada-challenge')).toBe('1');
+    expect(events).toMatchObject([
+      { st: 200, p: '/' }, { st: 403, blk: 'ip4' }, { st: 403, blk: 'challenge' }, { st: 200, ch: 1 }, { st: 200, chs: 1 },
+    ]);
+    for (const row of events) {
+      if (tokenHash) expect(row).toHaveProperty('tk', tk);
+      else expect(row).not.toHaveProperty('tk');
+    }
+  });
+
+  it('omits tk on beacon and track rows with the flag on', async () => {
+    const a = await primed({ key, tokenHash: true });
+    const relay = await call(a, '/_cam/fp', { method: 'POST', headers, body: '{"rid":"abc","tk":"forged"}' });
+    expect(relay.status).toBe(204);
+    expect((await call(a, '/signup', { method: 'POST', headers })).status).toBe(200);
+    expect(events.find((e) => e.sig === 1)).not.toHaveProperty('tk');
+    expect(events.find((e) => e.et === 'signup')).not.toHaveProperty('tk');
+    expect(events.find((e) => e.p === '/signup')).toHaveProperty('tk', tk);
+  });
+
+  it('resolves the env flag and header for each engine', async () => {
+    const a = await primed({ key });
+    const init = { headers: { ...headers, 'x-api-key': 'fake-api-key-0007' } };
+    await call(a, '/', init, ip('8.8.8.8', { env: { CAMADA_TOKEN_HASH: '1' } }));
+    expect(events.at(-1)).toHaveProperty('tk', tk);
+    await call(a, '/', init, ip('8.8.8.8', { env: { CAMADA_TOKEN_HASH: '1', CAMADA_TOKEN_HEADER: 'X-Api-Key' } }));
+    expect(events.at(-1)).toHaveProperty('tk', '94a6878c5d6bc3739f9a3d5644359a38');
+    await call(a, '/', init);
+    expect(events.at(-1)).not.toHaveProperty('tk');
+  });
+
+  it('warns once per engine when a configured header is ignored', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const a = await primed({ key, tokenHash: true, tokenHeader: 'Cookie' });
+      await call(a, '/', { headers });
+      expect(events.at(-1)).toHaveProperty('tk', tk);
+      expect(warn).toHaveBeenCalledOnce();
+    } finally { warn.mockRestore(); }
+  });
+
+  it('honors an explicit false over the env', async () => {
+    const a = await primed({ key, tokenHash: false, env: { ...ENV, CAMADA_TOKEN_HASH: '1' } });
+    await call(a, '/', { headers });
+    expect(events).toHaveLength(1);
+    expect(events[0]).not.toHaveProperty('tk');
+  });
+
+  it('redacts a configured header from existing telemetry fields', async () => {
+    const a = await primed({ key, tokenHash: true, tokenHeader: 'user-agent' });
+    await call(a, '/', { headers: { 'user-agent': credential } });
+    expect(events[0]).toHaveProperty('tk', tk);
+    expect(JSON.stringify(events[0])).not.toContain(credential);
+  });
+
+  it('enforces using the forwarded IP while redacting it if configured as a credential', async () => {
+    const a = await primed({ key, tokenHash: true, tokenHeader: 'x-forwarded-for', trustedProxy: { mode: 'hops', hops: 1 } });
+    const res = await call(a, '/', { headers: { 'x-forwarded-for': BLOCKED_IP } }, { peer: '192.0.2.1' });
+    expect(res.status).toBe(403);
+    expect(events[0]).toMatchObject({ ip: null, tk: expect.stringMatching(/^[0-9a-f]{32}$/) });
+    expect(JSON.stringify(events[0])).not.toContain(BLOCKED_IP);
+  });
+
+  it('ignores a snapshot config flag', async () => {
+    const remote = { ...BASE_CONFIG, tokenHash: true };
+    CONFIG = remote;
+    const a = await primed({ key });
+    await call(a, '/', { headers });
+    expect(events).toHaveLength(1);
+    expect(events[0]).not.toHaveProperty('tk');
+  });
+
+  it('serves requests with a scheme-only header without tk', async () => {
+    const a = await primed({ key, tokenHash: true });
+    expect((await call(a, '/', { headers: { authorization: 'Bearer' } })).status).toBe(200);
+    expect(events).toHaveLength(1);
+    expect(events[0]).not.toHaveProperty('tk');
+  });
+
+  it('ships the row and serves the response when signing rejects', async () => {
+    const a = await primed({ key, tokenHash: true });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const sign = vi.spyOn(crypto.subtle, 'sign').mockRejectedValue(new Error(credential));
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_001);
+    try {
+      expect((await call(a, '/', { headers })).status).toBe(200);
+      expect(events).toHaveLength(1);
+      expect(events[0]).not.toHaveProperty('tk');
+      expect(sign).toHaveBeenCalledOnce();
+      expect(error).toHaveBeenCalledWith(expect.any(String), 'token hash failed; event ships without tk');
+      expect(JSON.stringify(error.mock.calls)).not.toContain(credential);
+    } finally {
+      now.mockRestore();
+      sign.mockRestore();
+      error.mockRestore();
+    }
+  });
+});
+
 describe('fail open', () => {
   it('is inert without a key and never touches the app', async () => {
     const a = app({ env: {} });
@@ -981,17 +1097,18 @@ describe('fail open', () => {
   });
 
   it('still lets the app run and ships its event when the pipeline itself throws', async () => {
-    const a = await primed();
+    const a = await primed({ tokenHash: true, key: 'ct_test_fixture_key.snap-acme' });
     await call(a, '/');
     const eng = a.lastVars!.eng;
     const verdict = eng.snap.verdict;
     eng.snap.verdict = () => { throw new Error('boom'); };
     try {
-      const res = await call(a, '/', { headers: { cookie: '_sfp=known-sid' } }, ip(BLOCKED_IP));
+      const res = await call(a, '/', { headers: { cookie: '_sfp=known-sid', authorization: 'Bearer fake-token-0001-not-a-real-credential' } }, ip(BLOCKED_IP));
       expect(res.status).toBe(200);
       expect(res.headers.get('set-cookie')).toBeNull();   // no session decided: nothing minted
       // Fresh ids, but the address is resolved again so the one event the fallback exists for stays attributable (hono's rule)
       expect(events.at(-1)).toMatchObject({ p: '/', st: 200, sid: null, ns: 0, ip: BLOCKED_IP });
+      expect(events.at(-1)).toHaveProperty('tk', 'b3a18c6c56d5a2f7ad636bf950a919d7');
     } finally { eng.snap.verdict = verdict; }
   });
 });

@@ -11,6 +11,7 @@ import { EventQueue } from '../events/queue.js';
 import { buildWireEvent, beaconRow, type WireEvent } from '../events/build.js';
 import { resolveClientIp, type TrustedProxyConfig } from '../ip.js';
 import { hashUserId } from '../redact.js';
+import { requestTokenHash } from '../token.js';
 import { guarded, guardedAsync, logRateLimited } from '../guarded.js';
 import { onBodyDone, copyResponse } from '../body.js';
 import { readBodyCapped } from '../body-cap.js';
@@ -84,6 +85,7 @@ export interface FetchVars {
   facts: Facts;
   t0: number;                     // Date.now() when `before()` started: the event ships `ts` = t0 and `dur` = settle - t0 (ms), @camada/node's semantics
   ev: WireEvent | null;           // the request's wire event, built in `before()` (after Deno.upgradeWebSocket the request is closed and reading it throws); `after()` fills st/dur
+  tk: Promise<string | null> | null;
 }
 
 export type BeforeResult = { response: Response; vars?: undefined } | { response?: undefined; vars: FetchVars } | null;
@@ -93,7 +95,7 @@ export interface FetchCamada {
    *  beacon endpoints. `{ response }` = camada answered; `{ vars }` = let the app run and call
    *  `after()`; `null` = inert for this request (no key, or CAMADA_DISABLED). */
   before(req: Request, ctx?: FetchRequestContext): Promise<BeforeResult>;
-  /** Ships the wire event now, with the settled status. `null` = the host cannot see the
+  /** Queues the wire event with the settled status. `null` = the host cannot see the
    *  response, so it cannot say when it settled either: the event ships `st` and `dur` null. Never throws. */
   after(req: Request, vars: FetchVars, status: number | null): void;
   /** The usual end of a request: returns the response to send. A server-sent-events body is
@@ -123,12 +125,26 @@ const trustedProxy = (e: Engine): TrustedProxyConfig | null =>
 
 const beaconEnabled = (e: Engine): boolean => e.snap.config?.beacon !== false;   // tenant switch; a cold engine serves
 
+// Forwarded IPs still drive enforcement when that header is configured as a credential.
+const wireIp = (e: Engine, ip: string | null): string | null =>
+  e.env.tokenHash?.header === 'x-forwarded-for' ? null : ip;
+
 /** Push, then flush at once only where delivery depends on it: the host handed a real `waitUntil`
  *  (Workers-class: the isolate needs the flush inside it) or the engine is lazy (no timer exists).
  *  A long-lived timer-mode host just pushes; the interval and exit flush batch (camada-all-7u3r). */
-function ship(e: Engine, ev: unknown, waitUntil: WaitUntil): void {
+function ship(e: Engine, ev: unknown, waitUntil: WaitUntil): Promise<void> | undefined {
   e.queue.push(ev);
-  if (waitUntil !== noWait || e.env.mode === 'lazy') e.queue.flush(waitUntil);
+  if (waitUntil !== noWait || e.env.mode === 'lazy') return e.queue.flush(waitUntil);
+}
+
+function hashRequestToken(eng: Engine, req: Request): Promise<string | null> | null {
+  const cfg = eng.env.tokenHash;
+  return cfg ? requestTokenHash((n) => req.headers.get(n), cfg, eng.env.ingestToken) : null;
+}
+
+async function stampTk(eng: Engine, req: Request, ev: WireEvent): Promise<void> {
+  const tk = await hashRequestToken(eng, req);
+  if (tk) ev.tk = tk;
 }
 
 /** Edits `res.headers` in place, or on a faithful copy (see copyResponse) when its headers are
@@ -202,7 +218,9 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       return null;
     }
     const snapshotVersion = opts.snapshotVersion ?? DEFAULT_SNAPSHOT_VERSION;
-    const key = `${resolved.ingestToken}|${resolved.ingestUrl}|${resolved.snapshotUrl}|${snapshotVersion}|${resolved.mode}`;
+    const cfg = resolved.tokenHash;
+    const tokenKey = cfg ? `${cfg.header ?? ''}:${cfg.ignoredHeader}` : '';
+    const key = `${resolved.ingestToken}|${resolved.ingestUrl}|${resolved.snapshotUrl}|${snapshotVersion}|${resolved.mode}|tk:${tokenKey}`;
     const cached = engines.get(key);
     if (cached) return cached;
     const injected = opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {};   // never pass an explicit undefined key
@@ -214,6 +232,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     };
     if (resolved.mode === 'timer') { engine.snap.start(); engine.queue.installNodeExitFlush(); }   // long-lived host: poll on a timer, drain on exit (both self-guarding)
     engines.set(key, engine);
+    if (cfg?.ignoredHeader) guarded(() => console.warn('[camada] token header ignored; using Authorization only'), undefined);
     return engine;
   }
 
@@ -226,13 +245,16 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     ctx.ip || resolveClientIp(ctx.peer ?? null, req.headers.get('x-forwarded-for'), trustedProxy(e));
 
   function buildEvent(
-    req: Request, path: string, query: string, ip: string | null, sid: string | null, facts: Facts,
+    eng: Engine, req: Request, path: string, query: string, ip: string | null, sid: string | null, facts: Facts,
     rid: string = crypto.randomUUID(), newSession = false,   // the capture path passes the ids it shared with the app; camada's own answers need none
   ): WireEvent {
     const headers: Array<[string, string]> = [];
-    req.headers.forEach((v, k) => headers.push([k, v]));   // Headers normalise order: no HEADER_ORDER signal at this position
+    const tokenHeader = eng.env.tokenHash?.header;
+    // A configured credential header may otherwise be included verbatim as a request field.
+    req.headers.forEach((v, k) => headers.push([k, k === tokenHeader ? '' : v]));   // Headers normalise order: no HEADER_ORDER signal at this position
+    const host = tokenHeader === 'host' ? '' : req.headers.get('host') ?? new URL(req.url).host;
     const ev = buildWireEvent(
-      { method: req.method, host: req.headers.get('host') ?? new URL(req.url).host, path, query, headers, ip, httpVersion: facts.httpVersion },
+      { method: req.method, host, path, query, headers, ip: wireIp(eng, ip), httpVersion: facts.httpVersion },
       { tap, rid, sid, newSession },
     );
     if (facts.asn) ev.asn = facts.asn;
@@ -249,16 +271,17 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     let parsed: unknown;
     try { parsed = JSON.parse(body); } catch { return noContent(); }   // not a beacon: drop it, never ship junk
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return noContent();
-    ship(eng, beaconRow(parsed, ip, tap), waitUntil);
+    ship(eng, beaconRow(parsed, wireIp(eng, ip), tap), waitUntil);
     return noContent();
   }
 
   /** 403 + the proof-of-work page (HTML navigations) or, for a data-request navigation only, 403 JSON, plus the `blk: "challenge"` event. */
   async function serve(eng: Engine, req: Request, ip: string, sid: string | null, facts: Facts, target: string, waitUntil: WaitUntil): Promise<Response> {
     const url = new URL(req.url);
-    const ev = buildEvent(req, url.pathname, url.search, ip, sid, facts);
+    const ev = buildEvent(eng, req, url.pathname, url.search, ip, sid, facts);
     ev.st = 403;
     ev.blk = 'challenge';
+    if (eng.env.tokenHash) await stampTk(eng, req, ev);
     ship(eng, ev, waitUntil);
     if (!wantsHtml(req.headers.get('accept'), req.headers.get('sec-fetch-dest'))) {
       return new Response('{"error":"challenge_required"}', {
@@ -291,9 +314,10 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
         status: 403, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': challengePageCsp() },
       });
     }
-    const ev = buildEvent(req, url.pathname, '', ip, sid, facts);
+    const ev = buildEvent(eng, req, url.pathname, '', ip, sid, facts);
     ev.st = 200;
     ev.ch = 1;   // challenge passed (contract §A3 ingest field)
+    if (eng.env.tokenHash) await stampTk(eng, req, ev);
     ship(eng, ev, waitUntil);
     return new Response(null, {
       status: 302,
@@ -331,10 +355,11 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       const warnRule = v.warn ? v.rule ?? null : null;
 
       if (v.block) {
-        const ev = buildEvent(req, path, url.search, ip, sid, facts);
+        const ev = buildEvent(eng, req, path, url.search, ip, sid, facts);
         ev.st = 403;
         ev.blk = v.reason;   // SDK-01: the analyst counts SDK blocks apart from the app's own 403s ('rule' when a rule decided)
         if (v.rule) ev.rl = v.rule;
+        if (eng.env.tokenHash) await stampTk(eng, req, ev);
         ship(eng, ev, waitUntil);
         const headers: Record<string, string> = { 'content-type': 'text/plain', 'cache-control': 'no-store', 'x-block-reason': String(v.reason ?? ''), 'x-block-version': v.version ?? '' };
         if (v.rule) headers['x-block-rule'] = v.rule;   // a custom rule blocked: name it, so the customer knows which row to edit
@@ -375,8 +400,9 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       const secure = url.protocol === 'https:' ? '; Secure' : '';
       const sessionCookie = newSession ? `${SESSION_COOKIE}=${mintedSid}; Path=/; Max-Age=${SESSION_MAX_AGE}; HttpOnly; SameSite=Lax${secure}` : null;
       const rid = crypto.randomUUID();
-      const ev = buildEvent(req, path, url.search, ip, mintedSid, facts, rid, newSession);
-      return { vars: { eng, rid, sid: mintedSid, newSession, sessionCookie, ip, warnRule, signalled, scriptPath, waitUntil, facts, t0, ev } };
+      const ev = buildEvent(eng, req, path, url.search, ip, mintedSid, facts, rid, newSession);
+      const tk = hashRequestToken(eng, req);
+      return { vars: { eng, rid, sid: mintedSid, newSession, sessionCookie, ip: wireIp(eng, ip), warnRule, signalled, scriptPath, waitUntil, facts, t0, ev, tk } };
     }, undefined);
 
     // The guard threw before deciding: let the app run and still ship its event, with fresh ids
@@ -385,14 +411,15 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     if (answered) return answered;
     const ip = guarded(() => clientIp(eng, req, ctx), null);
     const rid = crypto.randomUUID();
-    const ev = guarded(() => { const url = new URL(req.url); return buildEvent(req, url.pathname, url.search, ip, null, facts, rid); }, null);
-    return { vars: { eng, rid, sid: null, newSession: false, sessionCookie: null, ip, warnRule: null, signalled: false, scriptPath, waitUntil, facts, t0, ev } };
+    const ev = guarded(() => { const url = new URL(req.url); return buildEvent(eng, req, url.pathname, url.search, ip, null, facts, rid); }, null);
+    const tk = hashRequestToken(eng, req);
+    return { vars: { eng, rid, sid: null, newSession: false, sessionCookie: null, ip: wireIp(eng, ip), warnRule: null, signalled: false, scriptPath, waitUntil, facts, t0, ev, tk } };
   }
 
   // Reads only `vars`, never the request: after Deno.upgradeWebSocket, `req.headers` throws.
   function after(_req: Request, vars: FetchVars, status: number | null): void {
-    void guardedAsync(async () => {
-      const { eng, ev } = vars;
+    const p = guardedAsync(async () => {
+      const { eng, ev, tk } = vars;
       if (!ev) return;
       const path = ev.p as string;
       const cfg = eng.snap.config;
@@ -403,8 +430,14 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       ev.st = status;
       ev.dur = status === null ? null : Math.max(0, Date.now() - vars.t0);   // request start → response settled; unknown where the response is unseen
       if (vars.warnRule) ev.wrn = vars.warnRule;   // §D3: the warn rule that let this request through
-      ship(eng, ev, vars.waitUntil);
+      if (tk) {
+        const hash = await tk;
+        if (hash) ev.tk = hash;
+      }
+      const flushed = ship(eng, ev, vars.waitUntil);
+      if (tk) return flushed;
     }, undefined);
+    if (vars.tk) guarded(() => vars.waitUntil(p), undefined);
   }
 
   function finish(req: Request, vars: FetchVars, res: Response): Response {

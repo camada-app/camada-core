@@ -1,5 +1,5 @@
 // Redaction, non-configurable-off (plan.md cross-cutting prerequisite 4). The SDK never ships:
-// Authorization/Cookie values (scheme only — build.ts), body field values (shape only), query
+// raw Authorization/Cookie values (see build.ts), body field values (shape only), query
 // params that look like credentials, or raw user identifiers (HMAC-hashed here, inside the SDK,
 // before anything reaches the queue). Customers can widen the ALLOWLIST, never narrow redaction.
 
@@ -86,9 +86,18 @@ export function bodyShape(obj: unknown): Record<string, number> | null {
  *  `subtle` defaults to the global WebCrypto (Node ≥20 and every edge runtime have one) and stays
  *  injectable for hosts that hand in their own, as @camada/node does. Core itself stays edge-safe. */
 export async function hashUserId(id: string, ingestToken: string, subtle: SubtleCrypto | undefined = globalThis.crypto?.subtle): Promise<string> {
+  return hmac32('uid:', id, ingestToken, subtle);
+}
+
+/** Stable credential hash keyed by the ingest token, with its own HMAC label. */
+export async function hashToken(credential: string, ingestToken: string, subtle: SubtleCrypto | undefined = globalThis.crypto?.subtle): Promise<string> {
+  return hmac32('tok:', credential, ingestToken, subtle);
+}
+
+async function hmac32(label: string, value: string, ingestToken: string, subtle: SubtleCrypto | undefined): Promise<string> {
   if (!subtle) throw new Error('camada: no WebCrypto available — this SDK needs Node >=20 or an edge runtime with globalThis.crypto.subtle (or pass a SubtleCrypto)');
   const enc = new TextEncoder();
   const key = await subtle.importKey('raw', enc.encode(ingestToken), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const sig = await subtle.sign('HMAC', key, enc.encode('uid:' + id));
+  const sig = await subtle.sign('HMAC', key, enc.encode(label + value));
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
 }

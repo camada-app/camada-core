@@ -56,10 +56,10 @@ Those depend on it, so `npm install` of any of them brings it along.
   request path.
 - **`buildWireEvent`**: the collector-compatible wire shape, including the pinned `HDRS`
   header-bitmask order and the wire header order (`hord`) only an in-app SDK can see.
-- **Redaction (non-configurable-off)**: `Authorization`/`Cookie` values never leave (scheme
-  and count only; a schemeless `Authorization` value ships nothing at all), credential-looking
-  query parts become `~r` (in the request's own query and in the `Referer`'s query and
-  fragment, `scrubUrl`; paths are not rewritten, in either). Names and values are
+- **Redaction (non-configurable-off)**: The SDK ships the `Authorization` scheme and cookie
+  count only by default. The opt-in `tokenHash` adds a keyed credential hash. Raw credentials
+  stay in-process. Credential-looking query parts become `~r` in the request's query and in
+  the `Referer`'s query and fragment (`scrubUrl`). Both paths are preserved. Names and values are
   percent-decoded before the test, and a value that decodes to a nested query (`?`, `&` or `=`)
   is dropped whole when any of its segments is a credential (`next=/reset?token=…`, an encoded
   `redirect_uri` carrying a `code`); other values, attack payloads included, stay readable for the
@@ -79,6 +79,22 @@ Those depend on it, so `npm install` of any of them brings it along.
   edge, so the app must not be reachable around it. An adapter that has a socket must never pass
   null for one request whose peer it cannot read. The result is always a valid IP or null: a
   non-IP peer (a unix socket path, `ip:port`, a zone id) resolves to null and never walks XFF.
+
+## Credential hash (opt-in, off by default)
+
+Set `tokenHash: true` or `CAMADA_TOKEN_HASH=1` to send `tk` on request events that carry a usable
+credential. An explicit `tokenHash: false` wins over the env. `tk` is the first 32 hex characters
+of HMAC-SHA256, keyed with your ingest token, over `tok:` plus the credential. For
+`Authorization`, the credential is the part after the scheme (for example, the Bearer token)
+or the whole value when there is no scheme. If you set `tokenHeader: 'x-api-key'` (or
+`CAMADA_TOKEN_HEADER`), the SDK uses that header's whole value when it gives a usable credential
+and falls back to `Authorization` otherwise. The credential itself never leaves the process.
+A value shorter than 8 characters or outside printable ASCII is skipped.
+
+camada uses `tk` to spot one credential replayed from many clients. Turn it on when your
+credentials are random tokens or API keys. Keep it off for human passwords over Basic auth
+because anyone holding both your events and your ingest token could test password guesses
+against the hash. Rotating the ingest token changes every `tk`.
 
 ## `@camada/core/fetch`: the shared Web-fetch pipeline
 
