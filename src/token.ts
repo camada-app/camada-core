@@ -15,7 +15,7 @@ export function normalizeTokenHeader(raw: string | null | undefined): string | n
 
 export function resolveTokenHash(opts: TokenHashOptions, env: Record<string, string | undefined>): TokenHashConfig | null {
   if ((opts.tokenHash ?? (env.CAMADA_TOKEN_HASH === '1')) !== true) return null;
-  const raw = opts.tokenHeader ?? env.CAMADA_TOKEN_HEADER;
+  const raw = opts.tokenHeader || env.CAMADA_TOKEN_HEADER;
   const header = normalizeTokenHeader(raw);
   return { header, ignoredHeader: Boolean(raw) && header === null };
 }

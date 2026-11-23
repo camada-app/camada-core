@@ -19,8 +19,12 @@ describe('resolveTokenHash', () => {
     const env = { ...envOn, CAMADA_TOKEN_HEADER: 'X-Api-Key' };
     expect(resolveTokenHash({}, env)).toEqual({ ...on, header: 'x-api-key' });
     expect(resolveTokenHash({ tokenHeader: 'X-Token' }, env)).toEqual({ ...on, header: 'x-token' });
-    expect(resolveTokenHash({ tokenHeader: '' }, env)).toEqual(on);
     expect(resolveTokenHash({ tokenHeader: 'x'.repeat(64) }, env)).toEqual({ ...on, header: 'x'.repeat(64) });
+  });
+
+  it('falls back to the env when the header option is empty', () => {
+    expect(resolveTokenHash({ tokenHeader: '' }, { ...envOn, CAMADA_TOKEN_HEADER: 'X-Api-Key' }))
+      .toEqual({ ...on, header: 'x-api-key' });
   });
 
   it.each(['Authorization', 'Cookie', 'Set-Cookie', 'x_api_key', ' x-key', 'x'.repeat(65)])('ignores %s', (tokenHeader) => {

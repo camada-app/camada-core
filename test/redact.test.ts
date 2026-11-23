@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { scrubQuery, scrubUrl, bodyShape, hashUserId, hashToken, buildWireEvent } from '../src/index.js';
 
@@ -99,8 +100,11 @@ describe('credential hash vectors (fixtures/redact/token.json)', () => {
     expect(tkFx.cases.length).toBeGreaterThanOrEqual(5);
     expect(new Set(tkFx.cases.map((c) => c.id)).size).toBe(tkFx.cases.length);
   });
-  it.each(tkFx.cases.filter((c) => c.tk !== null))('$id', async (c) => {
-    expect(await hashToken(c.credential!, c.key)).toBe(c.tk);
+  it.each(tkFx.cases)('$id', async ({ credential, key, tk }) => {
+    expect(tk === null).toBe(credential === null);
+    if (credential === null) return;
+    expect(tk).toBe(createHmac('sha256', key).update('tok:' + credential).digest('hex').slice(0, 32));
+    expect(await hashToken(credential, key)).toBe(tk);
   });
 });
 
