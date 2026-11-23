@@ -80,7 +80,7 @@ export function buildWireEvent(r: RequestInfo, o: BuildOptions): WireEvent {
 /** A visitor beacon as a `sig: 1` row: the body spread first so sig, ip, tap and rts (the relay's
  *  clock) are the server's to say, then every REQUEST_ROW_KEYS key dropped, since SDK-attested
  *  keys never ride a visitor's beacon. */
-export function beaconRow(body: Record<string, unknown>, ip: string | null, tap: Tap): WireEvent {
+export function beaconRow(body: object, ip: string | null, tap: Tap): WireEvent {
   const row: WireEvent = { ...body, sig: 1, ip, tap, rts: Date.now() };
   for (const k of REQUEST_ROW_KEYS) delete row[k];
   return row;

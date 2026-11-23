@@ -249,7 +249,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     let parsed: unknown;
     try { parsed = JSON.parse(body); } catch { return noContent(); }   // not a beacon: drop it, never ship junk
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return noContent();
-    ship(eng, beaconRow(parsed as Record<string, unknown>, ip, tap), waitUntil);
+    ship(eng, beaconRow(parsed, ip, tap), waitUntil);
     return noContent();
   }
 
