@@ -3,7 +3,7 @@
 // across taps. HDRS bit order is pinned by the shared fixture (hdrs.json) — never reorder.
 
 import { scrubQuery, scrubUrl } from '../redact.js';
-import type { Tap } from '../constants.js';
+import { REQUEST_ROW_KEYS, type Tap } from '../constants.js';
 
 export const HDRS = Object.freeze([
   'accept', 'accept-language', 'accept-encoding', 'sec-fetch-site', 'sec-fetch-mode', 'sec-fetch-dest',
@@ -75,4 +75,13 @@ export function buildWireEvent(r: RequestInfo, o: BuildOptions): WireEvent {
     ...(o.ja4 ? { ja4: o.ja4 } : {}),
     st: null, dur: null,                    // filled on response-finish ('dur': the collector wire already claims 'lat' for latitude)
   };
+}
+
+/** A visitor beacon as a `sig: 1` row: the body spread first so sig, ip, tap and rts (the relay's
+ *  clock) are the server's to say, then every REQUEST_ROW_KEYS key dropped, since SDK-attested
+ *  keys never ride a visitor's beacon. */
+export function beaconRow(body: object, ip: string | null, tap: Tap): WireEvent {
+  const row: WireEvent = { ...body, sig: 1, ip, tap, rts: Date.now() };
+  for (const k of REQUEST_ROW_KEYS) delete row[k];
+  return row;
 }

@@ -8,7 +8,7 @@
 // costs telemetry, never the app's response.
 import { SnapshotClient } from '../snapshot/client.js';
 import { EventQueue } from '../events/queue.js';
-import { buildWireEvent, type WireEvent } from '../events/build.js';
+import { buildWireEvent, beaconRow, type WireEvent } from '../events/build.js';
 import { resolveClientIp, type TrustedProxyConfig } from '../ip.js';
 import { hashUserId } from '../redact.js';
 import { guarded, guardedAsync, logRateLimited } from '../guarded.js';
@@ -17,7 +17,7 @@ import { readBodyCapped } from '../body-cap.js';
 import { createChallengeAsync, type AsyncChallengeKit } from '../challenge/verify-async.js';
 import { challengePage, challengePageCsp } from '../challenge/page.js';
 import { challengeCookie, safeReturnTo, wantsHtml, parseFormBody, CHALLENGE_COOKIE } from '../challenge/format.js';
-import { DEFAULT_SNAPSHOT_VERSION, REQUEST_ROW_KEYS, type Tap } from '../constants.js';
+import { DEFAULT_SNAPSHOT_VERSION, type Tap } from '../constants.js';
 import { resolveFetchEnv, type FetchCamadaOptions, type ResolvedFetchEnv } from './env.js';
 
 const DEFAULT_CHALLENGE_PATH = '/__camada/challenge';
@@ -249,10 +249,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     let parsed: unknown;
     try { parsed = JSON.parse(body); } catch { return noContent(); }   // not a beacon: drop it, never ship junk
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return noContent();
-    // Spread first: the ip and the tap are the server's to say, whatever the body claimed.
-    const row: Record<string, unknown> = { ...(parsed as Record<string, unknown>), sig: 1, ip, tap, rts: Date.now() };
-    for (const k of REQUEST_ROW_KEYS) delete row[k];
-    ship(eng, row, waitUntil);
+    ship(eng, beaconRow(parsed, ip, tap), waitUntil);
     return noContent();
   }
 
