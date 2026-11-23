@@ -5,7 +5,7 @@ export {
 export { Matcher, type MatchInput, type MatchResult, type MatchReason, type BlockReason } from './snapshot/match.js';
 export { SnapshotClient, type SnapshotClientOptions, type Verdict } from './snapshot/client.js';
 export { parseIp4, parseIp6Into } from './snapshot/ipparse.js';
-export { HDRS, buildWireEvent, authScheme, type RequestInfo, type BuildOptions, type WireEvent } from './events/build.js';
+export { HDRS, buildWireEvent, beaconRow, authScheme, type RequestInfo, type BuildOptions, type WireEvent } from './events/build.js';
 export { EventQueue, type EventQueueOptions } from './events/queue.js';
 export { scrubQuery, scrubUrl, bodyShape, hashUserId, REDACT_ALLOWLIST } from './redact.js';
 export { resolveClientIp, isTrustedPeer, parseTrustedProxyEnv, type TrustedProxyConfig } from './ip.js';
