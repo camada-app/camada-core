@@ -11,7 +11,7 @@ import { EventQueue } from '../events/queue.js';
 import { buildWireEvent, beaconRow, type WireEvent } from '../events/build.js';
 import { resolveClientIp, type TrustedProxyConfig } from '../ip.js';
 import { hashUserId } from '../redact.js';
-import { requestTokenHash } from '../token.js';
+import { requestTokenHash, tokenHashKey, warnIgnoredTokenHeader } from '../token.js';
 import { guarded, guardedAsync, logRateLimited } from '../guarded.js';
 import { onBodyDone, copyResponse } from '../body.js';
 import { readBodyCapped } from '../body-cap.js';
@@ -128,9 +128,9 @@ const beaconEnabled = (e: Engine): boolean => e.snap.config?.beacon !== false;  
 /** Push, then flush at once only where delivery depends on it: the host handed a real `waitUntil`
  *  (Workers-class: the isolate needs the flush inside it) or the engine is lazy (no timer exists).
  *  A long-lived timer-mode host just pushes; the interval and exit flush batch (camada-all-7u3r). */
-function ship(e: Engine, ev: unknown, waitUntil: WaitUntil): Promise<void> | undefined {
+function ship(e: Engine, ev: unknown, waitUntil: WaitUntil): void {
   e.queue.push(ev);
-  if (waitUntil !== noWait || e.env.mode === 'lazy') return e.queue.flush(waitUntil);
+  if (waitUntil !== noWait || e.env.mode === 'lazy') e.queue.flush(waitUntil);
 }
 
 function hashRequestToken(eng: Engine, req: Request): Promise<string | null> | null {
@@ -215,7 +215,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     }
     const snapshotVersion = opts.snapshotVersion ?? DEFAULT_SNAPSHOT_VERSION;
     const cfg = resolved.tokenHash;
-    const key = `${resolved.ingestToken}|${resolved.ingestUrl}|${resolved.snapshotUrl}|${snapshotVersion}|${resolved.mode}|tk:${cfg ? cfg.header ?? '' : '-'}`;
+    const key = `${resolved.ingestToken}|${resolved.ingestUrl}|${resolved.snapshotUrl}|${snapshotVersion}|${resolved.mode}|tk:${tokenHashKey(cfg)}`;
     const cached = engines.get(key);
     if (cached) return cached;
     const injected = opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {};   // never pass an explicit undefined key
@@ -227,7 +227,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     };
     if (resolved.mode === 'timer') { engine.snap.start(); engine.queue.installNodeExitFlush(); }   // long-lived host: poll on a timer, drain on exit (both self-guarding)
     engines.set(key, engine);
-    if (cfg?.ignoredHeader) guarded(() => console.warn('[camada] token header ignored; using Authorization only'), undefined);
+    warnIgnoredTokenHeader(cfg);
     return engine;
   }
 
@@ -426,8 +426,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
         const hash = await tk;
         if (hash) ev.tk = hash;
       }
-      const flushed = ship(eng, ev, vars.waitUntil);
-      if (tk) return flushed;
+      ship(eng, ev, vars.waitUntil);
     }, undefined);
     if (vars.tk) guarded(() => vars.waitUntil(p), undefined);
   }

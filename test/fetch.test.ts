@@ -1000,6 +1000,16 @@ describe('tk', () => {
     expect(events.at(-1)).not.toHaveProperty('tk');
   });
 
+  it('keeps the dash header engine separate when toggling hashing', async () => {
+    const a = await primed({ key });
+    const init = { headers: { '-': 'fake-api-key-0007' } };
+    await call(a, '/', init, ip('8.8.8.8', { env: { CAMADA_TOKEN_HASH: '1', CAMADA_TOKEN_HEADER: '-' } }));
+    await call(a, '/', init);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toHaveProperty('tk', '94a6878c5d6bc3739f9a3d5644359a38');
+    expect(events[1]).not.toHaveProperty('tk');
+  });
+
   it('warns once per engine when a configured header is ignored', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {

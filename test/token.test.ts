@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { hashToken, hashUserId, requestTokenHash, resolveTokenHash, tokenCredential } from '../src/index.js';
+import { hashToken, hashUserId, requestTokenHash, resolveTokenHash, tokenCredential, tokenHashKey } from '../src/index.js';
 
 describe('resolveTokenHash', () => {
   const on = { header: null, ignoredHeader: false };
@@ -35,6 +35,10 @@ describe('tokenCredential', () => {
       expect(tokenCredential(() => 'Bearer fake1234' + suffix, null)).toBeNull();
     }
   });
+});
+
+it('gives the dash header a different cache key from disabled hashing', () => {
+  expect(tokenHashKey({ header: '-', ignoredHeader: false })).not.toBe(tokenHashKey(null));
 });
 
 describe('requestTokenHash', () => {

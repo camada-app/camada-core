@@ -1,5 +1,5 @@
 import { authScheme } from './events/build.js';
-import { logRateLimited } from './guarded.js';
+import { guarded, logRateLimited } from './guarded.js';
 import { hashToken } from './redact.js';
 
 /** Reads the first value when the runtime exposes repeated headers separately. */
@@ -18,6 +18,14 @@ export function resolveTokenHash(opts: TokenHashOptions, env: Record<string, str
   const raw = opts.tokenHeader ?? env.CAMADA_TOKEN_HEADER;
   const header = normalizeTokenHeader(raw);
   return { header, ignoredHeader: Boolean(raw) && header === null };
+}
+
+export function tokenHashKey(cfg: TokenHashConfig | null): string {
+  return cfg === null ? 'off' : 'on:' + (cfg.header ?? '');
+}
+
+export function warnIgnoredTokenHeader(cfg: TokenHashConfig | null): void {
+  if (cfg?.ignoredHeader) guarded(() => console.warn('[camada] token header ignored; using Authorization only'), undefined);
 }
 
 // Keep everything from the first through the last non-SP/HTAB character.
