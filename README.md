@@ -90,7 +90,7 @@ of HMAC-SHA256, keyed with your ingest token, over `tok:` plus the credential. F
 or the whole value when there is no scheme. If you set `tokenHeader: 'x-api-key'` (or
 `CAMADA_TOKEN_HEADER`), the SDK uses that header's whole value when it gives a usable credential
 and falls back to `Authorization` otherwise. The credential itself never leaves the process.
-A value shorter than 8 characters or outside printable ASCII is skipped.
+The credential, after any scheme, must contain at least 8 printable ASCII characters; otherwise no `tk` is sent.
 
 camada uses `tk` to spot one credential replayed from many clients. Turn it on when your
 credentials are random tokens or API keys. Keep it off for human passwords over Basic auth
