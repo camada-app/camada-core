@@ -961,6 +961,33 @@ describe('tk', () => {
   const tk = 'b3a18c6c56d5a2f7ad636bf950a919d7';
   const key = 'ct_test_fixture_key.snap-acme';
 
+  it('starts the hashed lazy-mode POST after finish without waitUntil or a timer tick', async () => {
+    const a = await primed({ key, tokenHash: true, mode: 'lazy' });
+    const sign = crypto.subtle.sign.bind(crypto.subtle);
+    let release!: () => void;
+    const pending = new Promise<void>((r) => { release = r; });
+    const signing = vi.spyOn(crypto.subtle, 'sign').mockImplementationOnce(async (...args) => {
+      await pending;
+      return sign(...args);
+    });
+    const req = new Request('http://app.test/', { headers });
+    const preparing = a.cam.before(req);
+    try {
+      await vi.waitFor(() => expect(signing).toHaveBeenCalledOnce());
+      release();
+      const r = await preparing;
+      expect(r?.vars).toBeDefined();
+      expect(a.cam.finish(req, r!.vars!, new Response('ok')).status).toBe(200);
+      await Promise.resolve();
+      expect(events).toEqual([expect.objectContaining({ st: 200, tk })]);
+    } finally {
+      release();
+      const prepared = await preparing;
+      await prepared?.vars?.tk;
+      signing.mockRestore();
+    }
+  });
+
   it.each([undefined, true])('applies tokenHash=%s to capture, block, challenge and verify rows', async (tokenHash) => {
     const a = await primed({ key, tokenHash });
     expect((await call(a, '/', { headers })).status).toBe(200);

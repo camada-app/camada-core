@@ -39,6 +39,7 @@ const defaultFetch: typeof fetch = (input, init) => fetch(input, init);
 
 export class EventQueue {
   private q: unknown[] = [];
+  private readonly pending = new Set<Promise<unknown>>();
   private inflight: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private exitInstalled = false;
@@ -54,6 +55,13 @@ export class EventQueue {
   }
 
   get size(): number { return this.q.length; }
+
+  /** Tracks row builders so shutdown can wait for their pushes. Never throws. */
+  addPending(p: Promise<unknown>): void {
+    this.pending.add(p);
+    const settled = () => { this.pending.delete(p); };
+    try { void p.then(settled, settled); } catch { settled(); }
+  }
 
   /** Synchronous, never throws. Starts the interval timer lazily on first push. */
   push(event: unknown): void {
@@ -75,9 +83,11 @@ export class EventQueue {
     return this.drain(false, waitUntil);
   }
 
-  /** force = the process is exiting: ignore a 429 hold (nobody will be here when it ends) and, if the
-   *  send still fails, count the rows as dropped instead of re-holding them. */
+  /** Shutdown waits for rows still being built, ignores a 429 hold and drops rows if the retry fails. */
   private drain(force: boolean, waitUntil?: (p: Promise<unknown>) => void): Promise<void> {
+    if (force && this.pending.size > 0) {
+      return Promise.allSettled([...this.pending]).then(() => this.drain(force));
+    }
     if (this.inflight) {
       // The running drain may already be past its last q.length check (its tail clears `inflight` a few
       // microtasks later): a row pushed now would sit until the next timer tick, or forever in a frozen
@@ -135,11 +145,16 @@ export class EventQueue {
     return running;
   }
 
-  /** Stops the timers and removes the exit hooks. Rows held by a 429 would otherwise sit forever with
-   *  no timer to retry them, so stop() force-drains them (sent, or counted in `dropped`). A drain in
-   *  flight is awaited first; if it then meets a 429 its rows are re-queued without a timer and the
-   *  forced drain retries them once. The returned promise settles when that drain does and never rejects. */
+  /** Waits for pending pushes before clearing timers and removing exit hooks. Force-drains after
+   *  a pending push, a drain in flight or a 429 hold. The returned promise never rejects. */
   stop(): Promise<void> {
+    return this.stopWhenReady(false);
+  }
+
+  private stopWhenReady(drainQueued: boolean): Promise<void> {
+    if (this.pending.size > 0) {
+      return Promise.allSettled([...this.pending]).then(() => this.stopWhenReady(true));
+    }
     this.stopped = true;
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     const held = this.holdTimer !== null;
@@ -148,7 +163,7 @@ export class EventQueue {
       ((globalThis as { process?: NodeJS.Process }).process)?.removeListener(ev, fn);
     }
     this.exitInstalled = false;
-    if (!held && !this.inflight) return Promise.resolve();
+    if (!drainQueued && !held && !this.inflight) return Promise.resolve();
     this.heldUntil = 0;
     return this.drain(true);
   }

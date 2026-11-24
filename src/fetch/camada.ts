@@ -183,6 +183,7 @@ export function track(vars: FetchVars | undefined, event: string, data?: { user?
     const uid = data?.user ? await hashUserId(data.user, vars.eng.env.ingestToken) : null;
     ship(vars.eng, { tap: vars.eng.tap, et: event, uid, rid: vars.rid, sid: vars.sid, ip: vars.ip, ts: Date.now() }, vars.waitUntil);
   }, undefined);
+  vars.eng.queue.addPending(p);
   vars.waitUntil(p);   // the isolate may freeze right after the response: hold it open for the flush
   return p;
 }
@@ -326,6 +327,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     if (!eng) return null;
     const challengeOn = opts.challenge !== false && env.CAMADA_CHALLENGE !== '0';
     const waitUntil = ctx.waitUntil ?? noWait;
+    const waitForTk = eng.env.mode === 'lazy' && waitUntil === noWait;   // finish is synchronous; settle tk before a host can freeze
     const facts = factsOf(ctx);
 
     const answered = await guardedAsync(async (): Promise<BeforeResult> => {
@@ -394,6 +396,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       const rid = crypto.randomUUID();
       const ev = buildEvent(req, path, url.search, ip, mintedSid, facts, rid, newSession);
       const tk = hashRequestToken(eng, req);
+      if (waitForTk && tk) await guardedAsync(() => tk, null);
       return { vars: { eng, rid, sid: mintedSid, newSession, sessionCookie, ip, warnRule, signalled, scriptPath, waitUntil, facts, t0, ev, tk } };
     }, undefined);
 
@@ -405,6 +408,7 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
     const rid = crypto.randomUUID();
     const ev = guarded(() => { const url = new URL(req.url); return buildEvent(req, url.pathname, url.search, ip, null, facts, rid); }, null);
     const tk = hashRequestToken(eng, req);
+    if (waitForTk && tk) await guardedAsync(() => tk, null);
     return { vars: { eng, rid, sid: null, newSession: false, sessionCookie: null, ip, warnRule: null, signalled: false, scriptPath, waitUntil, facts, t0, ev, tk } };
   }
 
@@ -428,7 +432,10 @@ export function createFetchCamada(id: FetchIdentity, opts: FetchCamadaOptions = 
       }
       ship(eng, ev, vars.waitUntil);
     }, undefined);
-    if (vars.tk) guarded(() => vars.waitUntil(p), undefined);
+    if (vars.tk) {
+      vars.eng.queue.addPending(p);
+      guarded(() => vars.waitUntil(p), undefined);
+    }
   }
 
   function finish(req: Request, vars: FetchVars, res: Response): Response {

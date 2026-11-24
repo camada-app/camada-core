@@ -135,6 +135,40 @@ describe('a flush that lands on the tail of a drain (camada-all-a4m9 int)', () =
 });
 
 describe('exit flush', () => {
+  it('flushes a row built by a pending promise before re-raising SIGTERM', async () => {
+    const { EventEmitter } = await import('node:events');
+    const posted: unknown[] = [];
+    let postedAtExit: unknown[] = [];
+    const proc = Object.assign(new EventEmitter(), {
+      pid: 4242,
+      kill: vi.fn(() => { postedAtExit = [...posted]; }),
+    });
+    const queue = q(async (_u, init) => {
+      posted.push(...JSON.parse(init!.body as string));
+      return new Response(null, { status: 202 });
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    vi.useFakeTimers();
+    vi.stubGlobal('process', proc);
+    try {
+      queue.installNodeExitFlush();
+      queue.addPending(gate.then(() => queue.push({ p: '/' })));
+      proc.emit('SIGTERM');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(proc.kill).not.toHaveBeenCalled();
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(proc.kill).toHaveBeenCalledWith(4242, 'SIGTERM');
+      expect(postedAtExit).toEqual([{ p: '/' }]);
+    } finally {
+      release();
+      await queue.stop();
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  });
+
   it('flushes on SIGTERM and still exits where the host refuses process.kill (Deno without --allow-run)', async () => {
     const { EventEmitter } = await import('node:events');
     const exits: number[] = [];
@@ -156,6 +190,46 @@ describe('exit flush', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('pending rows', () => {
+  it('stop() waits for pending rows and clears the timer started by their push', async () => {
+    const posted: unknown[] = [];
+    const queue = q(async (_u, init) => {
+      posted.push(...JSON.parse(init!.body as string));
+      return new Response(null, { status: 202 });
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    vi.useFakeTimers();
+    try {
+      queue.addPending(gate.then(() => queue.push({ p: '/' })));
+      let stopped = false;
+      const stopping = queue.stop().then(() => { stopped = true; });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(stopped).toBe(false);
+      release();
+      await stopping;
+      expect(posted).toEqual([{ p: '/' }]);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      release();
+      await queue.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('forgets pending promises on fulfillment or rejection', async () => {
+    const queue = q(async () => new Response(null, { status: 202 }));
+    let reject!: (err: Error) => void;
+    const failed = new Promise<void>((_resolve, r) => { reject = r; });
+    const promises = [Promise.resolve(), failed];
+    for (const p of promises) queue.addPending(p);
+    expect(queue['pending'].size).toBe(2);
+    reject(new Error('row failed'));
+    await Promise.allSettled(promises);
+    expect(queue['pending'].size).toBe(0);
   });
 });
 
