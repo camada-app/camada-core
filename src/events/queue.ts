@@ -56,11 +56,12 @@ export class EventQueue {
 
   get size(): number { return this.q.length; }
 
-  /** Tracks row builders so shutdown can wait for their pushes. Never throws. */
-  addPending(p: Promise<unknown>): void {
+  /** Tracks a row builder so shutdown waits for its push; returns `p` for the caller's waitUntil. */
+  addPending<T>(p: Promise<T>): Promise<T> {
     this.pending.add(p);
     const settled = () => { this.pending.delete(p); };
-    try { void p.then(settled, settled); } catch { settled(); }
+    p.then(settled, settled);
+    return p;
   }
 
   /** Synchronous, never throws. Starts the interval timer lazily on first push. */
