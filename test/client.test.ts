@@ -46,14 +46,17 @@ describe('SnapshotClient', () => {
   it('stays cold until the first load is fully published (another request runs while the body is read)', async () => {
     let release!: () => void;
     const held = new Promise<void>((r) => { release = r; });
+    let reading!: () => void;
+    const started = new Promise<void>((r) => { reading = r; });
     const c = client(async () => {
       const res = ok200();
       const body = res.arrayBuffer.bind(res);
-      res.arrayBuffer = async () => { await held; return body(); };   // the load is mid-read here
+      res.arrayBuffer = async () => { reading(); await held; return body(); };   // the load is mid-read here
       return res;
     });
     const w: Promise<unknown>[] = [];
     c.ensureFresh((p) => w.push(p));
+    await started;
     expect(c.verdict({ ip: '203.0.113.66' }).reason).toBe('cold');
     release();
     await Promise.all(w);
