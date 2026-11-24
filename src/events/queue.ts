@@ -56,7 +56,7 @@ export class EventQueue {
 
   get size(): number { return this.q.length; }
 
-  /** Tracks a row builder so shutdown waits for its push; returns `p` for the caller's waitUntil. */
+  /** Tracks a row builder for shutdown's pending snapshot and returns `p` for the caller's waitUntil. */
   addPending<T>(p: Promise<T>): Promise<T> {
     this.pending.add(p);
     const settled = () => { this.pending.delete(p); };
@@ -84,11 +84,8 @@ export class EventQueue {
     return this.drain(false, waitUntil);
   }
 
-  /** Shutdown waits for rows still being built, ignores a 429 hold and drops rows if the retry fails. */
+  /** A forced drain ignores a 429 hold and drops rows if the retry fails. */
   private drain(force: boolean, waitUntil?: (p: Promise<unknown>) => void): Promise<void> {
-    if (force && this.pending.size > 0) {
-      return Promise.allSettled([...this.pending]).then(() => this.drain(force));
-    }
     if (this.inflight) {
       // The running drain may already be past its last q.length check (its tail clears `inflight` a few
       // microtasks later): a row pushed now would sit until the next timer tick, or forever in a frozen
@@ -146,16 +143,16 @@ export class EventQueue {
     return running;
   }
 
-  /** Waits for pending pushes before clearing timers and removing exit hooks. Force-drains after
-   *  a pending push, a drain in flight or a 429 hold. The returned promise never rejects. */
+  /** Waits for rows pending at the start before clearing timers and removing exit hooks. Force-drains
+   *  after a pending push, a drain in flight or a 429 hold. The returned promise never rejects. */
   stop(): Promise<void> {
-    return this.stopWhenReady(false);
+    if (this.pending.size > 0) {
+      return Promise.allSettled([...this.pending]).then(() => this.stopNow(true));
+    }
+    return this.stopNow(false);
   }
 
-  private stopWhenReady(drainQueued: boolean): Promise<void> {
-    if (this.pending.size > 0) {
-      return Promise.allSettled([...this.pending]).then(() => this.stopWhenReady(true));
-    }
+  private stopNow(drainQueued: boolean): Promise<void> {
     this.stopped = true;
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     const held = this.holdTimer !== null;
@@ -169,9 +166,15 @@ export class EventQueue {
     return this.drain(true);
   }
 
+  private drainOnExit(): Promise<void> {
+    if (this.pending.size === 0) return this.drain(true);
+    return Promise.allSettled([...this.pending]).then(() => this.drain(true));
+  }
+
   private exitHandlers: Array<[string, (...a: unknown[]) => void]> = [];
 
-  /** Node-only, opt-in (called by @camada/node): drain on beforeExit and on SIGTERM/SIGINT.
+  /** Node-only, opt-in (called by @camada/node). On beforeExit or SIGTERM/SIGINT, waits for rows
+   *  pending when the exit flush starts, then drains.
    *  The signal is re-raised with the default disposition ONLY when camada's handler was the
    *  sole listener — an app with its own graceful shutdown keeps full ownership of exit and
    *  never sees the signal delivered twice. stop() removes everything installed here. */
@@ -180,13 +183,13 @@ export class EventQueue {
     const proc = (globalThis as { process?: NodeJS.Process }).process;
     if (!proc?.on) return;
     this.exitInstalled = true;
-    const onBeforeExit = () => { void this.drain(true); };
+    const onBeforeExit = () => { void this.drainOnExit(); };
     proc.on('beforeExit', onBeforeExit);
     this.exitHandlers.push(['beforeExit', onBeforeExit]);
     for (const sig of ['SIGTERM', 'SIGINT'] as const) {
       const handler = () => {
         proc.removeListener(sig, handler);
-        if (proc.listenerCount(sig) > 0) { void this.drain(true); return; }   // the app owns shutdown; just drain quietly
+        if (proc.listenerCount(sig) > 0) { void this.drainOnExit(); return; }   // the app owns shutdown; just drain quietly
         const done = () => {
           try {
             proc.kill(proc.pid, sig);   // re-raise: with this handler gone, the default action exits with the signal's status
@@ -194,7 +197,7 @@ export class EventQueue {
             proc.exit(128 + (sig === 'SIGINT' ? 2 : 15));   // Deno without --allow-run refuses process.kill (NotCapable); exit with the same status
           }
         };
-        Promise.race([this.drain(true), new Promise((r) => setTimeout(r, 500))]).then(done, done);
+        Promise.race([this.drainOnExit(), new Promise((r) => setTimeout(r, 500))]).then(done, done);
       };
       proc.on(sig, handler);
       this.exitHandlers.push([sig, handler]);

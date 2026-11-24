@@ -220,6 +220,23 @@ describe('pending rows', () => {
     }
   });
 
+  it('stop() waits for only one snapshot of pending rows', async () => {
+    const queue = q(async () => new Response(null, { status: 202 }));
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    queue.addPending(gate.then(() => { queue.addPending(new Promise<void>(() => {})); }));
+    vi.useFakeTimers();
+    try {
+      let stopped = false;
+      void queue.stop().then(() => { stopped = true; });
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(stopped).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('forgets pending promises on fulfillment or rejection', async () => {
     const queue = q(async () => new Response(null, { status: 202 }));
     let reject!: (err: Error) => void;
