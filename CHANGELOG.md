@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.0 (2026-11-24; follows 0.6.1)
+
+### Added
+
+- Opt-in credential hash, off by default. With option `tokenHash: true` or env `CAMADA_TOKEN_HASH=1`, request events that carry a usable credential ship `tk`: the first 32 hex characters of HMAC-SHA256, keyed with the ingest token, over `tok:` plus the credential, computed in process. The credential is the `Authorization` value after its scheme (the whole value when there is no scheme), or the whole value of the `tokenHeader` / `CAMADA_TOKEN_HEADER` header when that one is usable. It needs at least 8 printable ASCII characters. The credential itself never leaves the process. An explicit `tokenHash: false` wins over the env. New exports: `hashToken`, `normalizeTokenHeader`, `resolveTokenHash`, `tokenCredential`, `requestTokenHash` and the `TokenHashOptions`, `TokenHashConfig` and `HeaderGet` types. (camada-all-tvkd)
+- `beaconRow(body, ip, tap)` builds the `sig: 1` row for a relayed visitor beacon: it stamps `rts` and drops every `REQUEST_ROW_KEYS` key. The adapters now share it. (camada-all-c0qo)
+- `EventQueue.addPending(p)` tracks a row still being built, so `stop()` can wait for it. (camada-all-vvvp)
+
+### Changed
+
+- `REQUEST_ROW_KEYS` also lists `tk`, `bf` and `upf`, so the beacon relay drops them from a visitor's body. (camada-all-tvkd)
+
+### Fixed
+
+- `EventQueue.stop()` waits for rows still being built (a `track()` row, or a request row waiting on its `tk` hash) and then drains them, so they are not lost on shutdown. In lazy mode with no `waitUntil`, the fetch pipeline settles the `tk` hash before the request continues. (camada-all-vvvp)
+
 ## 0.6.1 (2026-10-28; follows 0.6.0)
 
 ### Fixed
